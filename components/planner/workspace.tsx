@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
-import { findConflicts, formatDay, formatTime, isScheduled } from '@/lib/scheduling/meetings';
+import { findConflicts, formatDay, formatTime, needsTimingVerification } from '@/lib/scheduling/meetings';
 import { readSavedIds, selectSection, storageKey, type PlannerCourse, type Selection } from '@/lib/scheduling/selection';
 import { WeeklyCalendar } from './weekly-calendar';
 
@@ -54,7 +54,9 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   }, [selections, missing, ready, key, sourceId]);
 
   const conflicts = findConflicts(selections.map(s => s.section));
-  const unresolved = selections.filter(s => !s.section.meetings.length || s.section.meetings.some(m => !isScheduled(m)));
+  const unresolved = selections.filter(s => !s.section.meetings.length || s.section.meetings.some(m => m.timing !== 'arranged' && needsTimingVerification(m)));
+  const arranged = selections.filter(s => s.section.meetings.some(m => m.timing === 'arranged'));
+  const asynchronous = selections.filter(s => s.section.meetings.some(m => m.timing === 'asynchronous'));
   function add(course: PlannerCourse, section: Selection['section']): void {
     setSelections(current => selectSection(current, course, section));
   }
@@ -71,7 +73,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       <section className="planner-courses" aria-label="Find and select sections">
         {children}
         {courses.map(course => <details className="planner-course" key={course.id}>
-          <summary><span className="course-code">{course.code}</span><h3>{course.title}</h3><span className="muted">{course.creditsLabel} · {course.sections.length} sections</span></summary>
+          <summary><span className="course-code">{course.code}</span><h3>{course.title}</h3><span className="muted">{course.creditsLabel} · {course.sections.length} {course.sections.length === 1 ? 'section' : 'sections'}</span></summary>
           <Link className="back-link" href={`/courses/${encodeURIComponent(course.id)}`}>Full course details ↗</Link>
           {course.prerequisites && <p className="course-note"><strong>Prerequisites · </strong>{course.prerequisites}</p>}
           {!!course.notes.length && <details className="course-notes"><summary>Course & department notes</summary><dl>{course.notes.map(note => <div key={note.field}><dt>{note.field}</dt><dd>{note.text}</dd></div>)}</dl></details>}
@@ -95,6 +97,8 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
               const meeting = a.section.meetings[conflict.firstMeeting];
               return <li key={i}>{a.course.code} ({a.section.number}) overlaps {b.course.code} ({b.section.number}) on {formatDay(meeting.dayCode)}, {formatTime(meeting.startMinute)}–{formatTime(meeting.endMinute)}. Remove or replace a section below.</li>;
             })}</ul></> : <p>{selections.length ? 'No overlaps found among known meeting times.' : 'Your schedule starts here. Find a course and add a section.'}</p>}
+          {!!asynchronous.length && <p>Asynchronous content: {asynchronous.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. No required weekly meeting time; not placed on the calendar. Allow time for coursework and check assessment requirements.</p>}
+          {!!arranged.length && <p>Hours by arrangement: {arranged.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. Coordinate meetings with the instructor after registration; overlaps cannot be checked until times are known.</p>}
           {!!unresolved.length && <p>Timing needs verification: {unresolved.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. These meetings cannot be checked or placed on the calendar. Confirm with Rutgers.</p>}
         </div>
         <WeeklyCalendar selections={selections} />

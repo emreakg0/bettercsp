@@ -63,7 +63,12 @@ function namedValues(value: unknown, field: string): string[] {
 function meeting(raw: RawMeeting): Meeting {
   const start = minute(raw.startTimeMilitary), end = minute(raw.endTimeMilitary);
   const validRange = start !== null && end !== null && end > start;
-  return { dayCode: raw.meetingDay, startMinute: validRange ? start : null,
+  // Match Rutgers SOC's ByArrangementUtils; blank online timing alone is not evidence.
+  const explicitlyUntimed = raw.baClassHours === 'B' && !raw.meetingDay
+    && !raw.startTimeMilitary && !raw.endTimeMilitary && !raw.startTime && !raw.endTime;
+  const timing: Meeting['timing'] = validRange && /^[MTWHFSU]$/.test(raw.meetingDay) ? 'scheduled'
+    : explicitlyUntimed ? (raw.campusLocation === 'O' || raw.campusLocation === 'T' ? 'asynchronous' : 'arranged') : 'unknown';
+  return { timing, dayCode: raw.meetingDay, startMinute: validRange ? start : null,
     endMinute: validRange ? end : null, mode: plainText(raw.meetingModeDesc),
     campus: plainText(raw.campusName) || plainText(raw.campusAbbrev) || plainText(raw.campusLocation),
     building: plainText(raw.buildingCode), room: plainText(raw.roomNumber) };
@@ -74,20 +79,59 @@ function notices(raw: Record<string, unknown>, fields: string[]): SourceNotice[]
     return text ? [{ field, text }] : [];
   });
 }
+// Delivery codes come from SOC's course-type filters, not honors eligibility.
+function delivery(raw: RawSection): Section['delivery'] {
+  const code = plainText(raw.sectionCourseType);
+  const labels: Record<string, string> = { T: 'Traditional / face-to-face', H: 'Hybrid', O: 'Online / remote instruction' };
+  return { code, label: Object.hasOwn(labels, code) ? labels[code]
+    : code ? `Delivery code ${code} — meaning unverified` : 'Delivery format not specified' };
+}
+function honors(raw: RawSection): Section['honors'] {
+  const notes = plainText(raw.sectionNotes);
+  // An explicit designation is evidence; a section label or a mention in prerequisites is not.
+  if (/^HONORS SECTION\b/i.test(notes)) return { kind: 'designated', evidence: notes };
+  if (Array.isArray(raw.honorPrograms) && raw.honorPrograms.length) return {
+    kind: 'program-information', evidence: 'Rutgers supplies honors program codes. Verify their membership and enrollment rules with Rutgers.' };
+  return null;
+}
+function crossListings(raw: RawSection): string {
+  const supplied = plainText(raw.crossListedSectionsText);
+  if (supplied) return supplied;
+  if (!Array.isArray(raw.crossListedSections)) return '';
+  return raw.crossListedSections.map(value => {
+    const link = record(value);
+    const parts = [link.offeringUnitCode, link.subjectCode, link.courseNumber].map(plainText);
+    if (!/^\d{2}$/.test(parts[0]) || !/^\d{3}$/.test(parts[1]) || !/^\d{3}$/.test(parts[2])) {
+      return 'Cross-listed offering supplied; course identity needs verification with Rutgers';
+    }
+    const number = plainText(link.sectionNumber), index = plainText(link.registrationIndex);
+    return `${parts.join(':')}${number ? `:${number}` : ''}${index ? ` (index ${index})` : ''}`;
+  }).join('; ');
+}
 function section(raw: RawSection, source: CatalogSource): Section {
   const fields = Object.keys(raw).filter(key =>
     /honor|permission|eligib|major|minor|openTo|notes|comments|crossList|session|legend/i.test(key));
+  const readableRestrictions = plainText(raw.openToText);
   const messages = notices(raw, fields.filter(key =>
-    !['crossListedSectionType', 'sessionDatePrintIndicator', 'commentsText', 'crossListedSectionsText'].includes(key)));
-  if (raw.sectionCourseType === 'H') messages.unshift({ field: 'Honors indicator',
-    text: 'Rutgers marks this section with course type H. Verify honors requirements with Rutgers.' });
-  else if (raw.sectionCourseType && raw.sectionCourseType !== 'T') messages.push({
-    field: 'Section course type', text: `Source code ${describe(raw.sectionCourseType)}; meaning not verified.` });
+    !['crossListedSectionType', 'crossListedSections', 'sessionDatePrintIndicator', 'comments', 'commentsText', 'crossListedSectionsText', 'honorPrograms'].includes(key)
+    && !(readableRestrictions && ['majors', 'minors', 'unitMajors'].includes(key))));
+  const comments = namedValues(raw.comments, 'description').join('; ') || plainText(raw.commentsText) || describe(raw.comments);
+  if (comments) messages.push({ field: 'Section comments', text: comments });
+  const links = crossListings(raw);
+  if (links) messages.push({ field: 'Cross-listed sections', text: links });
+  const programs = namedValues(raw.honorPrograms, 'code');
+  if (describe(raw.honorPrograms)) messages.push({ field: 'Honors program codes',
+    text: `${programs.length ? programs.join(', ') : describe(raw.honorPrograms)} — program names and eligibility rules need verification with Rutgers.` });
+  if (raw.meetingTimes.some(m => m.baClassHours === 'B' && (m.meetingDay || m.startTimeMilitary || m.endTimeMilitary))) {
+    messages.push({ field: 'Meeting timing inconsistency', text: 'Rutgers marks a meeting by arrangement but also supplies a day or time. Available times are shown and checked conservatively; confirm the actual meeting schedule with the instructor.' });
+  }
   const instructors = namedValues(raw.instructors, 'name');
   return { id: `${source.id}:${raw.index}`, index: raw.index, number: raw.number,
+    delivery: delivery(raw), honors: honors(raw),
     instructors: instructors.length ? instructors
       : plainText(raw.instructorsText) ? [plainText(raw.instructorsText)] : [], meetings: raw.meetingTimes.map(meeting),
-    campuses: namedValues(raw.sectionCampusLocations, 'description'),
+    campuses: [...new Set(namedValues(raw.sectionCampusLocations, 'description')
+      .map(name => name === 'O' ? 'Online' : name === 'T' ? 'Remote instruction' : name))],
     availability: raw.openStatus === true ? 'open' : raw.openStatus === false ? 'closed' : 'unknown',
     notices: messages, raw };
 }

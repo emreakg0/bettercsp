@@ -7,6 +7,7 @@ export interface CatalogSource {
   capturedAt: string | null;
 }
 export interface Meeting {
+  timing: 'scheduled' | 'asynchronous' | 'arranged' | 'unknown';
   dayCode: string;
   startMinute: number | null;
   endMinute: number | null;
@@ -17,6 +18,8 @@ export interface Meeting {
 }
 export interface SourceNotice { field: string; text: string }
 export interface Section {
+  delivery: { code: string; label: string };
+  honors: { kind: 'designated' | 'program-information'; evidence: string } | null;
   id: string;
   index: string;
   number: string;

@@ -30,7 +30,7 @@ export default async function Home({ searchParams }: {
         <Link prefetch={false} href={`/courses/${encodeURIComponent(course.id)}?${new URLSearchParams({ back })}`} className="course-row">
           <span className="course-code">{course.code}<small>{course.department}</small></span>
           <span className="course-title">{course.title}<small>{course.campusCode}{course.supplement ? ` · Variant ${course.supplement}` : ''}</small></span>
-          <span className="course-meta">{course.creditsLabel}<small>{course.sections.length} sections</small></span>
+          <span className="course-meta">{course.creditsLabel}<small>{course.sections.length} {course.sections.length === 1 ? 'section' : 'sections'}</small></span>
           <span className="row-arrow" aria-hidden="true">↗</span>
         </Link>
       </li>)}</ul>}

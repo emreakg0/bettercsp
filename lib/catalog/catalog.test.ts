@@ -41,12 +41,14 @@ test('retains unknown restriction metadata and displays source signals without c
   const section = normalizeCourse(raw, source).sections[0];
   assert.deepEqual(section.raw.futureEligibilityRule, raw.sections[0].futureEligibilityRule);
   assert.ok(section.notices.some(n => n.field === 'futureEligibilityRule' && n.text.includes('Verify')));
-  assert.ok(section.notices.some(n => n.field === 'Honors indicator'));
+  assert.equal(section.delivery.label, 'Hybrid');
+  assert.equal(section.honors?.kind, 'program-information');
   assert.ok(section.notices.some(n => n.field === 'specialPermissionAddCode' && n.text === '04'));
 });
 test('does not infer honors from a course prerequisite mentioning honors calculus', () => {
   assert.match(calculus.prerequisites, /HONORS/);
-  assert.ok(calculus.sections.every(s => !s.notices.some(n => n.field === 'Honors indicator')));
+  assert.ok(calculus.sections.filter(s => /^\d+$/.test(s.number)).every(s => s.honors === null));
+  assert.equal(calculus.sections.find(s => s.index === '15919')?.honors?.kind, 'designated');
 });
 test('preserves unknown credits, unlisted instructors, and unknown availability', () => {
   const raw = structuredClone(calculus.raw);
@@ -107,4 +109,93 @@ test('preserves instructor text when Rutgers supplies no structured instructor r
   const raw = structuredClone(calculus.raw);
   raw.sections[0].instructorsText = 'Instructor supplied as text';
   assert.deepEqual(normalizeCourse(raw, source).sections[0].instructors, ['Instructor supplied as text']);
+});
+
+// Real snapshot regressions distinguish delivery, timing, and registration evidence.
+test('Arabic I section 01 is hybrid with asynchronous content, not an honors restriction', () => {
+  const arabic = courses.find(c => c.code === '01:013:140')!;
+  const section = arabic.sections.find(s => s.index === '13139')!;
+  assert.equal(section.number, '01');
+  assert.equal(section.raw.sectionCourseType, 'H');
+  assert.equal(section.delivery.label, 'Hybrid');
+  assert.equal(section.honors, null);
+  assert.deepEqual(section.meetings.map(m => m.timing), ['scheduled', 'scheduled', 'asynchronous']);
+  assert.equal(section.meetings[0].startMinute, 1060);
+  assert.ok(section.notices.some(n => /Hybrid Section - Some Meetings Online/.test(n.text)));
+  assert.ok(!section.notices.some(n => /honors/i.test(n.field)));
+  assert.ok(section.campuses.includes('Online'));
+});
+test('Rutgers Honors confirmed calculus H1 index 15919 retains honors and permission evidence', () => {
+  const section = calculus.sections.find(s => s.index === '15919')!;
+  assert.equal(section.number, 'H1');
+  assert.equal(section.raw.sectionCourseType, 'T');
+  assert.equal(section.delivery.label, 'Traditional / face-to-face');
+  assert.deepEqual(section.honors, { kind: 'designated', evidence: 'HONORS SECTION' });
+  assert.deepEqual(section.raw.honorPrograms, []);
+  assert.ok(section.notices.some(n => n.field === 'specialPermissionAddCode' && n.text === '03'));
+  assert.ok(section.notices.some(n => n.text === 'Department staff'));
+  assert.deepEqual(section.meetings.map(m => m.mode), ['LEC', 'LEC', 'RECIT']);
+});
+test('all H/O/T delivery types are understood independently of honors or section numbering', () => {
+  for (const [code, label] of [['H', 'Hybrid'], ['O', 'Online / remote instruction'], ['T', 'Traditional / face-to-face']]) {
+    const sections = courses.flatMap(c => c.sections).filter(s => s.raw.sectionCourseType === code);
+    assert.ok(sections.length);
+    assert.ok(sections.every(s => s.delivery.label === label));
+  }
+  const raw = structuredClone(calculus.raw);
+  raw.sections = [raw.sections[0]];
+  raw.sections[0].number = 'H1';
+  raw.sections[0].sectionNotes = 'NOT AN HONORS SECTION';
+  raw.sections[0].sectionCourseType = 'X';
+  const section = normalizeCourse(raw, source).sections[0];
+  assert.equal(section.honors, null);
+  assert.match(section.delivery.label, /meaning unverified/);
+});
+test('cross-listed Arabic offerings use readable Rutgers identities with a structured fallback', () => {
+  const arabic = courses.find(c => c.code === '01:013:140')!;
+  const section = arabic.sections.find(s => s.index === '13139')!;
+  assert.equal(section.notices.find(n => n.field === 'Cross-listed sections')?.text, '01:074:140:01 (13140)');
+  assert.ok(section.notices.every(n => !/courseNumber:|primaryRegistrationIndex:/.test(n.text)));
+  const raw = structuredClone(arabic.raw);
+  raw.sections[0].crossListedSectionsText = '';
+  const text = normalizeCourse(raw, source).sections[0].notices.find(n => n.field === 'Cross-listed sections')!.text;
+  assert.equal(text, '01:074:140:01 (index 13140)');
+  assert.ok(Array.isArray(section.raw.crossListedSections));
+});
+test('real arranged meetings stay distinct from asynchronous content and genuinely unknown timing', () => {
+  const course = courses.find(c => c.code === '01:013:321')!;
+  assert.ok(course.sections.flatMap(s => s.meetings).some(m => m.timing === 'arranged'));
+  const arabic = courses.find(c => c.code === '01:013:140')!;
+  const raw = structuredClone(arabic.raw);
+  const untimed = raw.sections[0].meetingTimes[2];
+  untimed.baClassHours = '';
+  assert.equal(normalizeCourse(raw, source).sections[0].meetings[2].timing, 'unknown');
+  untimed.baClassHours = 'B';
+  untimed.campusLocation = 'T';
+  assert.equal(normalizeCourse(raw, source).sections[0].meetings[2].timing, 'asynchronous');
+  untimed.startTimeMilitary = '2460';
+  assert.equal(normalizeCourse(raw, source).sections[0].meetings[2].timing, 'unknown');
+});
+test('scheduled online meetings do not become asynchronous because of delivery or location', () => {
+  const online = courses.flatMap(c => c.sections).flatMap(s => s.meetings)
+    .filter(m => m.mode === 'ONLINE INSTRUCTION(INTERNET)' && m.startMinute !== null && m.dayCode);
+  assert.ok(online.length);
+  assert.ok(online.every(m => m.timing === 'scheduled'));
+});
+test('readable open-to restrictions retain source wording without guessing code direction', () => {
+  const section = courses.flatMap(c => c.sections).find(s => s.index === '13214')!;
+  assert.ok(section.notices.some(n => n.field === 'openToText' && /MAJ: 014/.test(n.text)));
+  assert.ok(!section.notices.some(n => n.field === 'majors'));
+  assert.ok(Array.isArray(section.raw.majors));
+  const negative = courses.flatMap(c => c.sections).find(s => /NOT FOR CBN HONORS/.test(String(s.raw.sectionNotes)))!;
+  assert.ok(negative);
+  assert.equal(negative.honors, null);
+  assert.ok(negative.notices.some(n => /NOT FOR CBN HONORS/.test(n.text)));
+});
+
+test('real conflicting arrangement flags preserve supplied times and warn about inconsistent evidence', () => {
+  const section = courses.find(c => c.code === '01:991:170')!.sections.find(s => s.index === '16983')!;
+  assert.ok(section.meetings.length >= 2);
+  assert.ok(section.meetings.every(m => m.timing === 'scheduled'));
+  assert.ok(section.notices.some(n => n.field === 'Meeting timing inconsistency' && /confirm/.test(n.text)));
 });

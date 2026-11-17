@@ -14,8 +14,11 @@ export function formatTime(minute: number | null): string {
 }
 export function isScheduled(meeting: Meeting): meeting is Meeting & { startMinute: number; endMinute: number } {
   const { startMinute: start, endMinute: end } = meeting;
-  return Object.hasOwn(dayNames, meeting.dayCode) && start !== null && end !== null
+  return meeting.timing === 'scheduled' && Object.hasOwn(dayNames, meeting.dayCode) && start !== null && end !== null
     && Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end < 1440 && start < end;
+}
+export function needsTimingVerification(meeting: Meeting): boolean {
+  return meeting.timing !== 'asynchronous' && !isScheduled(meeting);
 }
 export function meetingsOverlap(a: Meeting, b: Meeting): boolean {
   return isScheduled(a) && isScheduled(b) && a.dayCode === b.dayCode

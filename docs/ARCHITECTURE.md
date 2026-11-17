@@ -96,12 +96,12 @@ Public endpoints supplied for integration (not fetched or behavior-verified in t
 | Credits | `credits` is numeric or null (476 null records); `creditsObject` includes `BA` / credits by arrangement; do not coerce unknown to zero |
 | Meetings | `meetingTimes` includes `meetingDay`, `startTimeMilitary`, `endTimeMilitary`, mode, building, room, campus fields |
 | Time examples | `1740`–`1900` military strings; alternative `0540`–`0700` plus `pmCode: P`; prefer validated military values |
-| Missing times | Blank days occur 6,186 times; `baClassHours: B` occurs. Missing timing is unresolved, not automatically asynchronous or conflict-free |
+| Untimed meetings | `baClassHours: B` plus blank day/times and online/remote campus O/T means asynchronous content per SOC; other untimed B meetings are arranged. Unsupported/partial timing remains unresolved |
 | Modes / locations | `LEC`, `RECIT`, `LAB`, online instruction and other modes; campuses include CAC, ONL, DNB; online does not imply asynchronous |
 | Instructors | `instructors: [{name: ...}]` and `instructorsText`; no stable instructor ID observed |
 | Prerequisites | `preReqNotes` contains text and HTML-like `<em> OR </em>`; `sectionNotes` can mention placement tests; not a verified machine-readable requirement graph |
 | Restrictions | `majors`, `minors`, `unitMajors`, `openToText`, `sectionEligibility` (e.g. `JUNIORS AND SENIORS`); code direction/combinations need verification |
-| Honors | `sectionCourseType` values H/O/T and `honorPrograms` code arrays; H appears with empty programs. These are signals, not verified eligibility rules |
+| Delivery / honors | `sectionCourseType`: H = hybrid, O = online/remote, T = traditional/face-to-face. Separate explicit honors section notes and `honorPrograms` evidence from delivery; program-code rules remain unverified |
 | Permission | `specialPermissionAddCode` examples `03`/`04`, descriptions `Department staff`/`Instructor`; drop codes also exist; exact enforcement needs verification |
 | Cross-listing | `crossListedSections` carries `registrationIndex`, `primaryRegistrationIndex`, course/section/unit/subject fields; `crossListedSectionType` has values 0–6 of unverified meaning |
 | Availability | Section `openStatus` is boolean, `openStatusText` OPEN/CLOSED; course `openSections` is a summary; neither proves student eligibility |
@@ -112,6 +112,10 @@ Sanitize or render notes as text. Never silently discard restrictive metadata.
 Cache catalog and availability independently by term/campus with timestamps and explicit stale/error
 states. Verify the open-sections response shape and completeness before interpreting an absent index
 as closed. On failure retain last-known data with a stale warning; never present it as refreshed.
+
+Phase 2.5 evidence, conservative classification rules, and unknown code meanings are recorded in
+[Rutgers data audit](RUTGERS_DATA_AUDIT.md). Shared section disclosures show delivery separately from
+honors evidence, readable cross-listings/comments, and source restrictions. Raw metadata is retained.
 
 ## 5. Proposed Data Models
 
@@ -182,9 +186,12 @@ Do not infer source course merges from identical labels. The implemented adapter
 `lib/scheduling/meetings.ts` contains shared day/time formatting, complete-meeting validation,
 and deterministic pairwise half-open interval conflict detection. Military-time parsing remains
 in `lib/rutgers/normalize.ts`. Every meeting in the selected registration index is retained;
-lectures, recitations, and labs are not treated as alternative choices. Unknown day/time values
-remain unresolved and are listed separately from the calendar. Scheduled online meetings count
-for overlaps. The calendar shows seven days, Eastern time, expands to selected hours, and uses
+lectures, recitations, and labs are not treated as alternative choices. Meetings carry explicit
+scheduled/asynchronous/arranged/unknown timing. Evidenced asynchronous
+components stay off the calendar without missing-time warnings; arranged meetings explain instructor
+coordination and unresolved overlaps. Unknown day/time values retain verification warnings.
+Conflicting B flags and supplied intervals produce a source warning while preserving timed checks.
+Scheduled online meetings count for overlaps. The calendar shows seven days, Eastern time, expands to selected hours, and uses
 separate lanes for overlapping blocks. Conflicting selections remain available for review.
 
 `lib/scheduling/selection.ts` provides compact catalog-derived client types and pure selection
@@ -231,7 +238,8 @@ Proposed rules return findings with source evidence, uncertainty, and a next act
 | Potentially ineligible | Evidence conflicts with supplied student context; review restriction |
 | Unknown / needs verification | Missing context, unsupported code, or ambiguous requirement; verify officially |
 Evaluate honors program membership, prerequisites, add permission/SPNs, major/school/year,
-placement, and linked-section requirements independently. Honor codes and H flags trigger review;
+placement, and linked-section requirements independently. Explicit honors section notes and honors
+program codes trigger review; delivery type H means hybrid and must not trigger an honors warning;
 section numbers or titles alone cannot establish honors rules. Prerequisite prose is a warning
 until its logic and the student's completion/placement evidence can be verified.
 Keep every finding; use a documented summary precedence (potentially ineligible, permission,

@@ -23,7 +23,7 @@ export default async function PlannerPage({ searchParams }: {
       <p>Availability may have changed. Closed sections can be kept as planning options. Adding a section does not reserve a seat or confirm eligibility. Review honors, permission, prerequisites, and restriction notes; verify with Rutgers SOC and WebReg before registration.</p></aside>
     <PlannerWorkspace sourceId={catalogSource.id} courses={result.courses.map(plannerCourse)}>
       <div id="planner-search"><SearchControls pathname="/planner" query={query} subject={subject} subjects={catalog.subjects} /></div>
-      <div className="results-heading"><h2>Find your courses</h2><p role="status">{result.total.toLocaleString('en-US')} courses</p></div>
+      <div className="results-heading"><h2>Find your courses</h2><p role="status">{result.total.toLocaleString('en-US')} {result.total === 1 ? 'course' : 'courses'}</p></div>
       {result.total === 0 && <div className="empty-state"><h3>No courses found.</h3><p>Try a shorter title, course code, or another subject.</p><Link href="/planner">Clear search and filters →</Link></div>}
       {result.pages > 1 && <nav className="pagination" aria-label="Planner search result pages">
         {result.page > 1 ? <Link href={pageHref(result.page - 1)} scroll={false}>← Previous</Link> : <span />}

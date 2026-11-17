@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { minute, normalizeCatalog } from '../rutgers/normalize.ts';
 import type { Meeting } from '../catalog/types.ts';
-import { findConflicts, isScheduled, meetingsOverlap, formatDay, formatTime } from './meetings.ts';
+import { findConflicts, isScheduled, meetingsOverlap, formatDay, formatTime, needsTimingVerification } from './meetings.ts';
 import { plannerCourse, readSavedIds, selectSection, storageKey } from './selection.ts';
 
 const source = { id: '2027-1-NB', label: 'Spring 2027', file: '', capturedAt: null };
@@ -11,7 +11,7 @@ const courses = normalizeCatalog(JSON.parse(readFileSync('data/rutgers/spring-20
 const calculus = plannerCourse(courses.find(c => c.code === '01:640:251')!);
 const other = plannerCourse(courses.find(c => c.code !== calculus.code && c.sections.length)!);
 function meeting(dayCode = 'M', startMinute: number | null = 600, endMinute: number | null = 660): Meeting {
-  return { dayCode, startMinute, endMinute, mode: 'LEC', campus: 'Busch', building: 'SEC', room: '101' };
+  return { timing: 'scheduled', dayCode, startMinute, endMinute, mode: 'LEC', campus: 'Busch', building: 'SEC', room: '101' };
 }
 
 test('parses military times independently of AM/PM display fields', () => {
@@ -89,4 +89,26 @@ test('invalid saves are rejected rather than silently replacing existing selecti
     JSON.stringify({ version: 1, sourceId: source.id, sectionIds: [1] })]) {
     assert.throws(() => readSavedIds(saved, source.id));
   }
+});
+
+test('Arabic hybrid async component neither conflicts nor produces a missing-time warning', () => {
+  const arabic = plannerCourse(courses.find(c => c.code === '01:013:140')!);
+  const section = arabic.sections.find(s => s.index === '13139')!;
+  const async = section.meetings[2];
+  assert.equal(async.timing, 'asynchronous');
+  assert.equal(isScheduled(async), false);
+  assert.equal(needsTimingVerification(async), false);
+  assert.equal(meetingsOverlap(async, meeting('T', 1060, 1140)), false);
+  assert.equal(meetingsOverlap(section.meetings[0], meeting('T', 1060, 1140)), true);
+  assert.equal(section.honors, null);
+  assert.equal(section.delivery.label, 'Hybrid');
+});
+test('arranged and unknown timings still require verification; honors metadata survives planner projection', () => {
+  const arranged = courses.find(c => c.code === '01:013:321')!.sections.flatMap(s => s.meetings).find(m => m.timing === 'arranged')!;
+  assert.equal(needsTimingVerification(arranged), true);
+  assert.equal(isScheduled(arranged), false);
+  assert.equal(needsTimingVerification({ ...meeting(), timing: 'unknown' }), true);
+  const honors = calculus.sections.find(s => s.index === '15919')!;
+  assert.equal(honors.honors?.kind, 'designated');
+  assert.equal(honors.delivery.code, 'T');
 });

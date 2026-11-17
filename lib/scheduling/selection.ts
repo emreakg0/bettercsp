@@ -8,8 +8,8 @@ export interface Selection { course: Omit<PlannerCourse, 'sections'>; section: O
 export function plannerCourse(course: Course): PlannerCourse {
   return { id: course.id, code: course.code, title: course.title, creditsLabel: course.creditsLabel,
     prerequisites: course.prerequisites, notes: course.notes,
-    sections: course.sections.map(({ id, index, number, instructors, meetings, campuses, availability, notices }) =>
-      ({ id, index, number, instructors, meetings, campuses, availability, notices })) };
+    sections: course.sections.map(({ id, index, number, instructors, meetings, campuses, availability, notices, delivery, honors }) =>
+      ({ id, index, number, instructors, meetings, campuses, availability, notices, delivery, honors })) };
 }
 export function selectSection(current: Selection[], course: PlannerCourse, section: Selection['section']): Selection[] {
   const { sections: _sections, ...info } = course;
