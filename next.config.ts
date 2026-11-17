@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Include the server-only local adapter data in deployment artifacts.
+  outputFileTracingIncludes: { "/*": ["./data/rutgers/*.json"] },
 };
 
 export default nextConfig;
