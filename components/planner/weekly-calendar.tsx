@@ -2,7 +2,7 @@ import { formatDay, formatTime, isScheduled, weekDays } from '@/lib/scheduling/m
 import type { Selection } from '@/lib/scheduling/selection';
 
 // No calendar primitive exists; this view positions every normalized meeting independently.
-export function WeeklyCalendar({ selections }: { selections: Selection[] }) {
+export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selections: Selection[]; idPrefix?: string }) {
   const events = selections.flatMap(item => item.section.meetings.flatMap((meeting, i) =>
     isScheduled(meeting) ? [{ ...item, meeting, key: `${item.section.id}:${i}` }] : []));
   const start = Math.min(8 * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
@@ -33,7 +33,7 @@ export function WeeklyCalendar({ selections }: { selections: Selection[] }) {
               laneEnds[lane] = event.meeting.endMinute;
               return { event, lane };
             });
-            return placed.map(({ event, lane }) => <a key={event.key} href={`#selected-${event.section.index}`}
+            return placed.map(({ event, lane }) => <a key={event.key} href={`#${idPrefix}-${event.section.index}`}
               className="calendar-event" style={{ top: event.meeting.startMinute - start,
                 height: event.meeting.endMinute - event.meeting.startMinute, left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
               <strong>{event.course.code}</strong><span>{event.meeting.mode || 'Meeting'} · {event.section.number}</span>

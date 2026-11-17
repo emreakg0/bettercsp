@@ -12,7 +12,7 @@ existing schedules whenever possible. Correctness, speed, accessibility, and use
 
 | Architecture summary | Current state / intended direction |
 | --- | --- |
-| Implemented | Course Explorer and interactive `/planner`, shared catalog search/details, deterministic meeting conflict checks, local schedule saves |
+| Implemented | Course Explorer and interactive `/planner`, shared catalog search/details, deterministic conflict checks and ranked generation, local schedule saves and locks |
 | Proposed data flow | SOC → validated normalization → search / eligibility / scheduling → recovery → UI |
 | Correctness boundary | Deterministic engines; availability and eligibility evaluated separately |
 | Persistence | Versioned browser schedule saves scoped to semester/campus; server catalog process cache |
@@ -38,14 +38,15 @@ renders server-side section disclosures. `app/courses/[id]/page.tsx` renders cou
 Loading/error/not-found routes cover failure states. Server Components call the adapter directly.
 `app/planner/page.tsx` reuses paginated catalog search; `components/planner` supplies interactive
 selection and calendar views. `app/api/planner/sections/route.ts` resolves at most 100 saved section
-identities against the same catalog. There is no live SOC ingestion, automatic generation,
-authentication, or database.
+identities against the same catalog. `POST /api/planner/generate` validates and resolves generation
+choices against the server catalog, returning bounded ranked alternatives. There is no live SOC
+ingestion, eligibility decision engine, authentication, or database.
 Read relevant installed Next.js guides before implementation, as required by `AGENTS.md`.
 
 ## 3. High-Level System Architecture
 
 The local catalog → normalization → search → Course Explorer and manual planner paths exist.
-Automatic scheduling, eligibility evaluation, and recovery engines remain proposed.
+Bounded generation/ranking is implemented; eligibility evaluation and recovery engines remain proposed.
 Keep pure domain engines independent of React, network clients, and storage adapters.
 
 ```mermaid
@@ -54,15 +55,15 @@ flowchart TD
   RAW["Local JSON snapshot - exists"] --> I
   I --> N["Validation and normalization - exists"]
   N --> P["Catalog process cache - exists"]
-  P --> S["Next.js Server Components exist; API routes proposed"]
+  P --> S["Next.js Server Components and planner APIs - exist"]
   S --> Q["Course search and filtering - exists"]
   S --> E["Eligibility engine - proposed"]
-  Q --> G["Schedule generation - proposed"]
+  Q --> G["Bounded schedule generation - exists"]
   E --> G
-  G --> R["Optimization and ranking - proposed"]
+  G --> R["Preference ranking - exists"]
   R --> X["Registration Rescue - proposed"]
   E --> X
-  X --> UI["Browser / React - Course Explorer and manual planner exist"]
+  X --> UI["Browser / React - Course Explorer, manual planner, generator exist"]
   Q --> UI
   Q --> MANUAL["Manual selection / conflict checks - exists"]
   MANUAL --> UI
@@ -73,7 +74,8 @@ flowchart TD
 Existing boundaries: `lib/rutgers` (raw types/normalization), `lib/catalog` (data access/search),
 `components/catalog` (shared search controls/section views), `lib/scheduling` (meeting semantics,
 conflict detection, selection updates, save validation/client projections), `components/planner`
-(workspace/calendar), and `app/api/planner/sections` (read-only saved-ID resolution).
+(workspace/calendar/generation controls), `app/api/planner/sections` (saved-ID resolution), and
+`app/api/planner/generate` (bounded computation).
 Proposed only: `lib/eligibility`, `lib/recovery`, and durable persistence. Do not create empty modules.
 Use shared typed inputs/results so the same deterministic engines can run outside Next.js.
 
@@ -202,30 +204,76 @@ section labels, no equivalent enrollment identities are silently merged. All sup
 restriction/linkage notices are available through the shared section disclosures. Eligibility,
 commute gaps, and session date ranges are not evaluated; the UI explains these limits.
 
-### Proposed automatic generation (later phase)
-Proposed pipeline: selected course IDs → candidate section bundles → hard-constraint filtering →
-conflict search → deduplication → deterministic preference ranking with explanations.
+### Implemented Phase 3: bounded generation and ranking
 
-- A raw section includes multiple meeting rows: check all lectures, recitations, and labs together.
-  Separate index linkages must come from verified rules; never pair sections by numbering guesses.
-- Preserve cross-listed enrollment identities and restrictions. Verified equivalent offerings may
-  share conflict computations, but must not be selected twice for duplicate credit or silently swapped.
-- Hard constraints: selected required courses, locked/registered sections, verified linkages,
-  time overlap, user blocks, credit bounds when known, and verified eligibility blockers.
-  Unknown credits/times/linkages produce unresolved results rather than a certified valid schedule.
-- Availability policy is explicit: closed sections can be backups, not registration-ready candidates.
-  Unknown eligibility must remain visible even if a timetable is otherwise conflict-free.
-- Compare half-open intervals `[start, end)` on matching days and overlapping date ranges.
-  Day labels H = Thursday and U = Sunday were verified against official SOC day-filter labels;
-  preserve unknown day codes without guessing.
-- Normalize meetings once; precompute candidate conflict adjacency/bitsets for selected courses.
-  Search the course with fewest candidates first, propagate exclusions, and prune infeasible branches.
-- Avoid Cartesian products over the whole catalog. Generate only selected-course bundles; use bounded
-  top-K results, deterministic budgets/tie-breaks, and cancellation. Report truncation/incompleteness.
-- Deduplicate by canonical enrollment-bundle IDs, not calendar appearance alone; retain distinct
-  registration choices. Use stable ID order to break equal ranks and reproduce results.
-- Soft preferences: compactness, days, start/end times, and later commute scoring. Score valid
-  candidates with documented weights; a soft score never overrides a hard constraint.
+`generation-types.ts` defines the typed request/results; `generation-request.ts` validates API and
+engine inputs without adding dependencies. `candidates.ts` applies hard constraints to whole
+registration indexes; `relationships.ts` conservatively groups explicit cross-listed course codes
+and surfaces linkage prose without deriving enrollment rules. `generate.ts` runs depth-first
+constraint search with smallest-domain ordering, lazy cached pair conflicts, forward checking,
+optional-course omission, and a bounded top-K set. It never materializes a Cartesian product.
+
+Limits: 12 total courses (including locks/retained manual selections), 2,000 filtered candidates,
+25,000 deterministic search steps by default (internal hard maximum 50,000), 10 retained results
+(API default; internal maximum 20), and at most 10,000 cached section-pair conflicts. Work accounting
+includes forward-check candidates. Result truncation is explicit; truncated results are the best
+found, not a claim of global optimality or proof that no timetable exists. Course/index tie-breaking
+is deterministic. Duplicate schedule identity is the sorted set of registration IDs; distinct
+registration choices remain distinct even when they share identical timetable appearances.
+
+Hard filters cover earliest start, latest end, required days off, excluded indexes/campuses, and
+locks. Every timed lecture/recitation/lab in an index participates. Explicit asynchronous components
+need no weekly interval. Arranged, unknown, internally overlapping, and inconsistent-source timings
+are excluded with reasons; a locked section that fails a hard rule yields an actionable no-result
+state. Unknown campus locations cannot establish compliance with campus exclusions.
+
+Cross-listed course-code relationships are treated transitively and symmetrically; two enrollment
+identities from the same known group (including same-code campus/supplement variants) cannot be
+selected together. No course identity is silently swapped. Separate required-component rules are
+not decoded: source co-requisite/required-registration notes become prominent limitations, and
+all generated results require registration review. See the Phase 3 follow-up in the data audit.
+
+`scoring.ts` derives metrics independently from eligibility and availability. Results first maximize
+included optional courses, then minimize the sum of user-weighted penalties, then sort by ID:
+
+| Penalty | Quantity multiplied by its weight |
+| --- | --- |
+| Days off | Number of days with timed classes |
+| Later starts | 24 minus the mean first-class start hour across timed class days (0 for no timed classes) |
+| Gaps | Total hours between scheduled classes on the same day |
+| Campus changes | Consecutive changes among known physical campus meetings, ignoring online/remote locations |
+| Commute days | Distinct days with known physical campus meetings |
+| Instructors | Sections without a case-insensitive substring match to any supplied preferred name |
+
+Contributions are rounded to 0.001 points; lower total penalty is preferred. Missing instructor or
+location data limits these preferences, and unknown locations are disclosed. Campus changes are a
+preliminary proxy, with no bus travel durations invented. Snapshot status and honors/restriction
+information do not alter scores; closed/unknown snapshot sections remain explicitly warned planning
+alternatives. Metrics, score contributions, prerequisites/source notices, and limitations accompany
+every retained result. Weekly patterns do not verify special session dates or exam obligations.
+
+The UI adds course targets, required/optional choices, progressive preference controls, previews,
+previous/next navigation, pinned comparisons, locks, and explicit Apply. All manual courses outside
+the target list become fixed contextual locks for generation, so previews account for their meetings.
+Results carry a client basis signature; changed targets/settings/locks/draft or a pending replacement
+request disables Apply. Apply replaces only targeted choices (including omitted optional targets),
+retains contextual/manual sections and explicit locks, and offers an in-memory pre-apply undo until
+manual edits. Generation never writes the saved draft automatically. Error/empty/partial states keep
+the manual draft intact. Generator targets/preferences/results are session state, not named saves.
+
+Local saves remain version 1, with an optional validated `lockedSectionIds` field. Old ID-only saves
+load unchanged; resolved saved IDs receive current metadata. Locks persist per semester/campus with
+the draft. Unknown saved IDs must be resolved/removed before generation. No schema/dependency changes
+or enrollment transactions were introduced.
+
+Measured locally on Node 24, using the existing cached snapshot (median of five warm runs after
+one warm-up; not an HTTP or deployment latency guarantee):
+
+| Courses | Section counts | Solver median | Search steps | Combinations scored | Retained / search |
+| --- | --- | --- | --- | --- | --- |
+| Data Structures + Multivariable Calculus | 45 × 30 | 3.95 ms | 3,932 | 1,006 | 10 / complete |
+| Above + General Physics + College Writing | 45 × 30 × 30 × 99 | 25.95 ms | 25,000 | 6,053 | 10 / truncated |
+| Above + Elementary Arabic I + General Psychology | 45 × 30 × 30 × 99 × 2 × 7 | 26.38 ms | 25,000 | 5,045 | 10 / truncated |
 
 ## 7. Registration Eligibility Engine
 
@@ -307,8 +355,8 @@ and textual conflict/restriction explanations; never rely on color alone. Preser
 | Availability | Current development snapshot; separate refresh and freshness metadata proposed |
 | Eligibility | Source warnings implemented; rules and student-context evaluation proposed |
 Implemented browser saves use `bettercsp:planner:v1:<year-term-campus>` and store only version,
-source ID, and section IDs. On hydration, saved data is validated and resolved through the catalog
-endpoint before editing or saving is enabled, preventing an empty initial render from overwriting
+source ID, section IDs, and optional locked section IDs. On hydration, saved data is validated and
+resolved through the catalog endpoint before editing or saving is enabled, preventing an empty initial render from overwriting
 an existing save. Missing IDs remain saved and visibly unresolved until explicitly removed.
 Read/restore failures retain the previous save and offer retry or an explicit new schedule;
 write failures keep the draft in memory with a warning. Saves do not sync across devices and can
@@ -343,7 +391,16 @@ prefill/deep-link support or send personal context in URLs. Only local snapshot 
 
 Implemented: `lib/catalog/catalog.test.ts` uses `node:test` for normalization, full snapshot counts,
 identity collisions, Calculus meetings/indexes, unknown metadata, honors signal boundaries,
-nullable credits, malformed input, search/filtering, and pagination. Remaining behavior tests:
+nullable credits, malformed input, search/filtering, and pagination. `lib/scheduling` adds meeting,
+generation, ranking, request-boundary, lock/save, and apply tests. The 55 current tests include real
+Data Structures/Calculus bundles, late-component overlaps, async/arranged/unknown timing,
+required-linkage uncertainty, cross-list groups, hard constraints, optional coverage, score metrics,
+all soft preferences, deterministic ordering, duplicate elimination, bounded large products,
+small-case exhaustive enumeration, and preservation of retained/locked sections on apply.
+Production browser checks cover desktop and 375px mobile: multi-course selection, preview-only
+save behavior, comparison/navigation, lock restore, apply/undo, infeasible constraints, stale results,
+network failure, request validation/body limits, and the unchanged Course Explorer.
+Future coverage beyond implemented guarantees:
 - Normalization: nullable credits, duplicate course identities, unknown codes, malformed rows, HTML notes.
 - Eligibility: honors signals with/without program data, permission, prerequisites, placement, major/school,
   contradictory evidence, missing context, and open-but-restricted sections.
@@ -359,14 +416,15 @@ Use representative small fixtures and injected clocks/adapters; avoid live SOC d
 
 ## 14. Implementation Roadmap
 
-Phase 1 local-snapshot Course Explorer is implemented; live ingestion remains future work.
-Phases 2–5 remain **planned**; no scheduling or registration decision engine exists.
+Phases 1–3 below reflect implemented work. Eligibility decision rules, live ingestion, and recovery
+remain future work; generation does not establish registration readiness.
 
 | Phase | Scope / completion evidence needed |
 | --- | --- |
 | 1 — Foundation | Local ingestion/normalization, variant identities, search/filtering and section details tested; API fetching deferred |
-| 2 — Scheduling | Conflict/linkage handling, deterministic generation, weekly calendar, preference ranking |
-| 3 — Registration Intelligence | Eligibility classification, verified honors rules, prerequisite warnings, readiness |
+| 2 — Interactive Planner | Implemented: manual sections, weekly calendar, conflicts, local saves |
+| 2.5 — Data Correctness | Implemented: delivery/honors separation, async/arranged semantics, readable source warnings |
+| 3 — Generation and Ranking | Implemented: bounded deterministic generation, hard constraints, weighted ranking, previews/comparison, locks and explicit apply |
 | 4 — Registration Rescue | Suggested automatic repair, backups, approval-based recovery workflows |
 | 5 — Advanced Features | Verified commute scoring, optional accounts, course monitoring, optional AI assistance |
 AI may explain results or assist discovery; it must not decide scheduling correctness or eligibility.
@@ -393,8 +451,8 @@ Compact decision log; status describes policy/design, not implementation complet
 - Establish SOC update cadence, availability endpoint shape, cache headers/rate guidance, and outage behavior.
 - No historical availability series exists here; the single snapshot cannot predict seat openings.
 - Verify permitted WebReg handoff capabilities; no enrollment API or deep-link contract is established.
-- No verified deployment, shared cache, durable store, accounts, monitoring, scheduling or eligibility
-  engine exists. Current process cache is disposable; snapshot capture time is unknown.
+- No independently verified deployment, shared cache, durable store, accounts, monitoring, or eligibility
+  decision engine exists. Bounded weekly scheduling is implemented; separately required registration bundles remain unverified. Current process cache is disposable; snapshot capture time is unknown.
 
 Sources inspected: `AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`, `tsconfig.json`,
 `next.config.ts`, `eslint.config.mjs`, `postcss.config.mjs`, `app/page.tsx`, `app/layout.tsx`,

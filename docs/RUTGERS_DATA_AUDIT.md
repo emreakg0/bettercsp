@@ -51,4 +51,37 @@ was inspected without refreshing or modifying it. No live seat or eligibility ch
 
 Regression coverage uses actual Arabic, Calculus H1, arranged, scheduled-online,
 restriction, and inconsistent-arrangement records, plus malformed/unknown-field variants.
-Phase 3 generation, authentication, and registration automation remain outside this audit.
+Phase 3 generation was outside the original Phase 2.5 audit. Its relationship follow-up is recorded below; authentication and registration automation remain unimplemented.
+
+## Phase 3 relationship investigation
+
+The snapshot has no structured co-requisite/required-section linkage field. Data Structures
+`01:198:112` has 45 registration indexes; index 14315 already contains two lectures and a recitation.
+Multivariable Calculus `01:640:251` has 30 indexes; index 15895 similarly contains two lectures and a
+recitation. The [Math Spring 2027 schedule](https://iw3.math.rutgers.edu/schedule/undergraduate-2027-spring-table.html)
+shows shared lecture groups plus specific recitations, and the
+[Data Structures course site](https://ds.cs.rutgers.edu/) requires the registered recitation for quizzes.
+These sources support preserving each index's supplied meeting bundle, rather than choosing an
+arbitrary lecture and recitation independently. They do not establish a universal linkage rule.
+
+Separate registration is a real, different case: current snapshot `01:070:407:01`, index 13302,
+explicitly says to register for `01:070:408`; the latter's section 01/index 13303 reciprocates.
+Cross-listed `01:595:402`/`403` have analogous notes. A departmental
+[Spring 2017 syllabus](https://anthropology.rutgers.edu/images/documents/syllabi/407-408mostrecent.pdf)
+independently describes separate lecture/lab registrations; its historical date is not evidence of
+current section pairing. The current-term notes are retained as required-component limitations.
+The generator never invents a section pair, auto-adds an unseen lab, or claims to have satisfied a
+textual co-requisite. Students must inspect source notes and confirm the registration bundle.
+
+[SEBS cross-listing policy](https://sebscourseapproval.rutgers.edu/policies/course-cross-listing-policy/)
+and Rutgers terminology support preventing duplicate enrollment under cross-listed course codes.
+The generator blocks course-code groups evidenced by structured cross-list metadata, transitively
+and conservatively, even when two indexes have no timed overlap. It preserves each enrollment
+identity. The meanings of cross-list type codes and primary-index operations are still unverified.
+Mutual-credit exclusions or co-requisites written only in arbitrary prose are surfaced, not executed
+as machine-verified eligibility rules. No automatic degree or registration eligibility audit exists.
+
+Phase 3 excludes arranged, unknown, and inconsistent-source timing from generated timetables,
+with per-course exclusion counts; these sections remain available in manual planning. Evidence-backed
+asynchronous components remain candidates without occupying a weekly interval. Closed snapshot
+sections can be planning alternatives with explicit warnings, never guaranteed available seats.
