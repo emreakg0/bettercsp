@@ -3,8 +3,8 @@
 import { useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
-export function SearchControls({ query, subject, subjects }: {
-  query: string; subject: string; subjects: { code: string; name: string }[];
+export function SearchControls({ query, subject, subjects, pathname = '/' }: {
+  pathname?: string; query: string; subject: string; subjects: { code: string; name: string }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -29,10 +29,10 @@ export function SearchControls({ query, subject, subjects }: {
     const department = String(values.get('subject') ?? '');
     if (q) params.set('q', q);
     if (department) params.set('subject', department);
-    startTransition(() => router.replace(`/?${params}`, { scroll: false }));
+    startTransition(() => router.replace(`${pathname}?${params}`, { scroll: false }));
   }
   return (
-    <form ref={form} action="/" className="search-controls" role="search"
+    <form ref={form} action={pathname} className="search-controls" role="search"
       onSubmit={event => { event.preventDefault(); if (timer.current) clearTimeout(timer.current); navigate(); }}>
       <div className="search-field">
         <label htmlFor="course-search">Find a course</label>

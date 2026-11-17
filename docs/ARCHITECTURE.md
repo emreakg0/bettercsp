@@ -12,10 +12,10 @@ existing schedules whenever possible. Correctness, speed, accessibility, and use
 
 | Architecture summary | Current state / intended direction |
 | --- | --- |
-| Implemented | Server-rendered Course Explorer, debounced search/filtering, section details, validated local catalog adapter |
+| Implemented | Course Explorer and interactive `/planner`, shared catalog search/details, deterministic meeting conflict checks, local schedule saves |
 | Proposed data flow | SOC → validated normalization → search / eligibility / scheduling → recovery → UI |
 | Correctness boundary | Deterministic engines; availability and eligibility evaluated separately |
-| Persistence | None implemented; begin with versioned browser saves and server catalog caching |
+| Persistence | Versioned browser schedule saves scoped to semester/campus; server catalog process cache |
 | Registration | User-initiated WebReg handoff; WebReg remains the final authority |
 
 ## 2. Technology Stack
@@ -29,19 +29,23 @@ existing schedules whenever possible. Correctness, speed, accessibility, and use
 | Tooling | ESLint 9, Next core-web-vitals/TypeScript presets in `eslint.config.mjs` |
 | Hosting | Vercel is the intended deployment target; no deployment verified |
 `next.config.ts` includes local Rutgers JSON in server deployment traces. `package.json` adds
-`npm test` using Node's native TypeScript test runner (Node >=22.18; verified on Node 24).
+`npm test` for catalog and scheduling behavior using Node's native TypeScript test runner (Node >=22.18; verified on Node 24).
 `lib/rutgers/types.ts` and `normalize.ts` validate raw input and retain unknown fields;
 `lib/catalog/types.ts`, `search.ts`, and `server.ts` provide domain types, paginated search,
 and a shared per-process load promise with retry after failure. No new packages were added.
 `components/catalog/search-controls.tsx` handles debounced URL navigation; `section-list.tsx`
 renders server-side section disclosures. `app/courses/[id]/page.tsx` renders course details.
-Loading/error/not-found routes cover failure states. No API handlers, live SOC ingestion,
-scheduling, authentication, database, or saved schedules exist. Server Components call the adapter directly.
+Loading/error/not-found routes cover failure states. Server Components call the adapter directly.
+`app/planner/page.tsx` reuses paginated catalog search; `components/planner` supplies interactive
+selection and calendar views. `app/api/planner/sections/route.ts` resolves at most 100 saved section
+identities against the same catalog. There is no live SOC ingestion, automatic generation,
+authentication, or database.
 Read relevant installed Next.js guides before implementation, as required by `AGENTS.md`.
 
 ## 3. High-Level System Architecture
 
-The local catalog → normalization → search → Course Explorer path exists. Other engines remain proposed.
+The local catalog → normalization → search → Course Explorer and manual planner paths exist.
+Automatic scheduling, eligibility evaluation, and recovery engines remain proposed.
 Keep pure domain engines independent of React, network clients, and storage adapters.
 
 ```mermaid
@@ -49,7 +53,7 @@ flowchart TD
   SOC["Rutgers SOC - external"] --> I["Local ingestion exists; SOC fetch proposed"]
   RAW["Local JSON snapshot - exists"] --> I
   I --> N["Validation and normalization - exists"]
-  N --> P["Process cache exists; persistence proposed"]
+  N --> P["Catalog process cache - exists"]
   P --> S["Next.js Server Components exist; API routes proposed"]
   S --> Q["Course search and filtering - exists"]
   S --> E["Eligibility engine - proposed"]
@@ -58,15 +62,19 @@ flowchart TD
   G --> R["Optimization and ranking - proposed"]
   R --> X["Registration Rescue - proposed"]
   E --> X
-  X --> UI["Browser / React - Course Explorer exists; scheduler UI proposed"]
+  X --> UI["Browser / React - Course Explorer and manual planner exist"]
   Q --> UI
+  Q --> MANUAL["Manual selection / conflict checks - exists"]
+  MANUAL --> UI
   R --> UI
-  UI -->|user confirms save| P
+  UI -->|draft changes| B["Versioned browser schedule saves - exists"]
   UI -->|user initiates| W["WebReg handoff - proposed; external destination"]
 ```
 Existing boundaries: `lib/rutgers` (raw types/normalization), `lib/catalog` (data access/search),
-`components/catalog` (search controls/section views). Proposed only: `lib/eligibility`,
-`lib/scheduling`, `lib/recovery`, `lib/persistence`, and `app/api`. Do not create empty modules.
+`components/catalog` (shared search controls/section views), `lib/scheduling` (meeting semantics,
+conflict detection, selection updates, save validation/client projections), `components/planner`
+(workspace/calendar), and `app/api/planner/sections` (read-only saved-ID resolution).
+Proposed only: `lib/eligibility`, `lib/recovery`, and durable persistence. Do not create empty modules.
 Use shared typed inputs/results so the same deterministic engines can run outside Next.js.
 
 ## 4. Rutgers Course Data
@@ -168,6 +176,26 @@ interface RecoveryPlan {
 Do not infer source course merges from identical labels. The implemented adapter preserves campus/supplement variants. Keep student-supplied context optional and separate from SOC.
 
 ## 6. Scheduling Engine
+
+### Implemented Phase 2: manual planning
+
+`lib/scheduling/meetings.ts` contains shared day/time formatting, complete-meeting validation,
+and deterministic pairwise half-open interval conflict detection. Military-time parsing remains
+in `lib/rutgers/normalize.ts`. Every meeting in the selected registration index is retained;
+lectures, recitations, and labs are not treated as alternative choices. Unknown day/time values
+remain unresolved and are listed separately from the calendar. Scheduled online meetings count
+for overlaps. The calendar shows seven days, Eastern time, expands to selected hours, and uses
+separate lanes for overlapping blocks. Conflicting selections remain available for review.
+
+`lib/scheduling/selection.ts` provides compact catalog-derived client types and pure selection
+updates. There is one section per exact normalized course identity; choosing another replaces
+only that course's section. Campus/supplement variants retain separate identities. Cross-listed
+equivalence and separate required-section linkage are **unverified**: no pairing is inferred from
+section labels, no equivalent enrollment identities are silently merged. All supplied source
+restriction/linkage notices are available through the shared section disclosures. Eligibility,
+commute gaps, and session date ranges are not evaluated; the UI explains these limits.
+
+### Proposed automatic generation (later phase)
 Proposed pipeline: selected course IDs → candidate section bundles → hard-constraint filtering →
 conflict search → deduplication → deterministic preference ranking with explanations.
 
@@ -249,8 +277,12 @@ sequenceDiagram
 ```
 
 ## 9. Frontend Architecture and UX
-Proposed calendar-first workspace: course search/selection beside an interactive weekly calendar,
-schedule comparison, preference controls, eligibility warnings, readiness review, Rescue Mode, and saves.
+Implemented `/planner`: course search/selection beside a weekly calendar on desktop, with a
+course/calendar button switcher below 1000px. Existing catalog search controls and section disclosures
+are extended rather than duplicated. Calendar blocks link to selected section details; remove and
+replace preserve unrelated choices. The Course Explorer remains at `/`. Existing Geist typography,
+spacing, and components are retained; accent colors now use Rutgers scarlet (`#cc0033`).
+Schedule comparison, preference controls, readiness review, and Rescue Mode remain proposed.
 Use focused panels and progressive disclosure; avoid cluttered dashboards and unnecessary animation.
 Keep domain results outside rendering logic. Show loading, empty, failure, stale, and partial-result states.
 Provide keyboard controls, visible focus, semantic labels, accessible list alternatives to calendar drag,
@@ -258,16 +290,22 @@ and textual conflict/restriction explanations; never rely on color alone. Preser
 
 ## 10. Application State and Persistence
 
-| State | Proposed owner / lifecycle |
+| State | Owner / lifecycle (future items marked proposed) |
 | --- | --- |
 | Catalog/search results | Server-fetched, normalized, versioned; URL filters for shareable search |
 | Schedule selections | Client draft; derive meetings/conflicts rather than duplicate them |
-| Preferences | Client state; explicit, versioned browser save |
-| Saved schedules | Start with localStorage plus export/import and revision checks; handle corruption/quota failure |
-| Availability | Separately refreshed server snapshot with observed time and stale/error state |
-| Eligibility | Derived from rules, catalog, and optional student context; invalidate when inputs change |
-Only catalog process caching and URL search/filter/page state exist. Browser saves remain proposed;
-they will not sync across devices and may be cleared, so label that limitation.
+| Preferences | Proposed client state and versioned save |
+| Saved schedules | Implemented versioned localStorage draft; export/import and revision checks proposed |
+| Availability | Current development snapshot; separate refresh and freshness metadata proposed |
+| Eligibility | Source warnings implemented; rules and student-context evaluation proposed |
+Implemented browser saves use `bettercsp:planner:v1:<year-term-campus>` and store only version,
+source ID, and section IDs. On hydration, saved data is validated and resolved through the catalog
+endpoint before editing or saving is enabled, preventing an empty initial render from overwriting
+an existing save. Missing IDs remain saved and visibly unresolved until explicitly removed.
+Read/restore failures retain the previous save and offer retry or an explicit new schedule;
+write failures keep the draft in memory with a warning. Saves do not sync across devices and can
+be cleared by browser settings. Concurrent tabs are last-writer-wins; there is no revision merging.
+Export/import, multiple named schedules, and cross-device saves remain proposed.
 Begin without accounts or a database. Add authenticated durable storage only for justified cross-device
 requirements. Multi-instance shared caching is a later deployment decision; process memory is disposable.
 
