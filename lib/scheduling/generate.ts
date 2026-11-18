@@ -1,3 +1,5 @@
+import { evaluateEligibility } from '../eligibility/evaluate.ts';
+import { emptyProfile, type StudentProfile } from '../eligibility/types.ts';
 import type { Course } from '../catalog/types.ts';
 import { plannerCourse, type Selection } from './selection.ts';
 import { exclusionReason, sectionsOverlap, type Candidate } from './candidates.ts';
@@ -7,8 +9,8 @@ import { parseGenerationRequest } from './generation-request.ts';
 import type { CandidateReport, GenerationRequest, GenerationResult, RankedSchedule } from './generation-types.ts';
 
 type Domain = { course: Course; required: boolean; candidates: Candidate[] };
-type Found = ReturnType<typeof scoreSchedule> & { id: string; picked: Candidate[]; optionalIncluded: number };
-const compare = (a: Found, b: Found): number => b.optionalIncluded - a.optionalIncluded || a.score - b.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+type Found = ReturnType<typeof scoreSchedule> & { id: string; picked: Candidate[]; optionalIncluded: number; changed: number };
+const compare = (a: Found, b: Found): number => a.changed - b.changed || b.optionalIncluded - a.optionalIncluded || a.score - b.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 function prepare(courses: Course[], request: GenerationRequest): { domains: Domain[]; reports: CandidateReport[]; issues: string[] } {
   const choices = new Map<string, boolean>();
@@ -28,7 +30,15 @@ function prepare(courses: Course[], request: GenerationRequest): { domains: Doma
     const report: CandidateReport = { courseId: id, code: course.code, total: course.sections.length, candidates: 0, exclusions: {} };
     const candidates: Candidate[] = [];
     for (const section of course.sections) {
-      const reason = locks.length && !locks.some(s => s.id === section.id) ? 'Different section is locked' : exclusionReason(section, request.constraints);
+      let reason = locks.length && !locks.some(s => s.id === section.id) ? 'Different section is locked' : exclusionReason(section, request.constraints);
+      if (!reason && request.eligibility?.excludeConfirmed) {
+        const assessment = evaluateEligibility(course, section, request.eligibility.profile);
+        if (assessment.confirmedIncompatible) {
+          reason = 'Confirmed eligibility mismatch with reported information';
+          report.eligibilityExclusions ??= [];
+          if (report.eligibilityExclusions.length < 20) report.eligibilityExclusions.push({ index: section.index, findings: assessment.findings.filter(f => f.excludable) });
+        }
+      }
       if (reason) report.exclusions[reason] = (report.exclusions[reason] ?? 0) + 1;
       else candidates.push({ course, section });
     }
@@ -41,7 +51,7 @@ function prepare(courses: Course[], request: GenerationRequest): { domains: Doma
   domains.sort((a, b) => Number(b.required) - Number(a.required) || a.candidates.length - b.candidates.length || (a.course.id < b.course.id ? -1 : 1));
   return { domains, reports, issues };
 }
-function describe(found: Found, domains: Domain[], cached: Map<string, Selection>): RankedSchedule {
+function describe(found: Found, domains: Domain[], cached: Map<string, Selection>, profile: StudentProfile): RankedSchedule {
   const selections = found.picked.map(({ course, section }) => {
     let selection = cached.get(section.id);
     if (!selection) {
@@ -54,7 +64,7 @@ function describe(found: Found, domains: Domain[], cached: Map<string, Selection
   const restrictions = found.picked.flatMap(({ course, section }) => [
     ...(course.prerequisites ? [{ field: 'Prerequisites', text: course.prerequisites }] : []), ...course.notes, ...section.notices,
   ].map(notice => ({ ...notice, courseCode: course.code, sectionIndex: section.index })));
-  const limitations = ['Eligibility and separately registered component requirements are unverified. Confirm with Rutgers and WebReg.',
+  const limitations = ['Eligibility checks cover supported rules and self-reported information only. WebReg is the final authority; separately registered components still need review.',
     'Availability is a snapshot, not a live seat check. Scores do not measure eligibility or availability.',
     'Weekly overlaps only; session dates, exam times, and bus travel durations are not verified. Campus changes are a preliminary proxy.'];
   for (const { course, section } of found.picked) {
@@ -63,16 +73,19 @@ function describe(found: Found, domains: Domain[], cached: Map<string, Selection
     if (section.meetings.some(m => !m.campus)) limitations.push(`${course.code}: missing locations make campus/commute metrics incomplete.`);
   }
   return { id: found.id, selections, score: found.score, metrics: found.metrics, breakdown: found.breakdown,
-    optionalIncluded: found.optionalIncluded, restrictions, limitations: [...new Set(limitations)],
+    optionalIncluded: found.optionalIncluded, restrictions, eligibility: found.picked.map(({ course, section }) => evaluateEligibility(course, section, profile)), limitations: [...new Set(limitations)],
     omittedCourses: domains.filter(d => !found.picked.some(p => p.course.id === d.course.id)).map(d => d.course.code) };
 }
 
 // Bounded depth-first constraint search is new; Phase 2 supplies overlap checks, not enumeration.
-export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number } = {}): GenerationResult {
+export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number; baseline?: { courseId: string; sectionId: string }[]; maxChanges?: number } = {}): GenerationResult {
   const request = parseGenerationRequest(input);
   const maxNodes = Number.isFinite(limits.maxNodes) ? Math.max(1, Math.min(50000, Math.floor(limits.maxNodes!))) : 25000;
   const maxResults = Number.isFinite(limits.maxResults) ? Math.max(1, Math.min(20, Math.floor(limits.maxResults!))) : 10;
   const { domains, reports, issues } = prepare(courses, request);
+  const baseline = new Map(limits.baseline?.map(item => [item.courseId, item.sectionId]) ?? []);
+  const maxChanges = Number.isFinite(limits.maxChanges) ? Math.max(0, Math.floor(limits.maxChanges!)) : Infinity;
+  if (baseline.size) for (const domain of domains) domain.candidates.sort((a, b) => Number(b.section.id === baseline.get(domain.course.id)) - Number(a.section.id === baseline.get(domain.course.id)) || (a.section.id < b.section.id ? -1 : 1));
   const result: GenerationResult = { schedules: [], reports, issues, visited: 0, completed: 0, truncated: false };
   if (issues.length) return result;
   const groups = equivalentCourseGroups(domains.map(d => d.course));
@@ -99,15 +112,15 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
       return !overlaps;
     });
   }
-  function search(depth: number, optionalIncluded: number): void {
-    if (!spend()) return;
-    if (best.length === maxResults && optionalIncluded + domains.slice(depth).filter(d => !d.required).length < best[best.length - 1].optionalIncluded) return;
+  function search(depth: number, optionalIncluded: number, changed: number): void {
+    if (!spend() || changed > maxChanges) return;
+    if (!baseline.size && best.length === maxResults && optionalIncluded + domains.slice(depth).filter(d => !d.required).length < best[best.length - 1].optionalIncluded) return;
     if (depth === domains.length) {
       if (!picked.length) return;
       result.completed++;
       const id = picked.map(c => c.section.id).sort().join('|');
       if (seen.has(id)) return;
-      const found = { ...scoreSchedule(picked.map(c => c.section), request.weights, request.preferredInstructors), id, picked: [...picked], optionalIncluded };
+      const found = { ...scoreSchedule(picked.map(c => c.section), request.weights, request.preferredInstructors), id, picked: [...picked], optionalIncluded, changed };
       if (best.length < maxResults || compare(found, best[best.length - 1]) < 0) {
         best.push(found); best.sort(compare); seen.add(id);
         if (best.length > maxResults) seen.delete(best.pop()!.id);
@@ -118,17 +131,18 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
     for (const candidate of domain.candidates) {
       // Count rejected branches as work too, so impossible instances remain bounded.
       if (!spend()) return;
-      if (!compatible(candidate)) continue;
+      const nextChanges = changed + Number(baseline.has(domain.course.id) && baseline.get(domain.course.id) !== candidate.section.id);
+      if (nextChanges > maxChanges || !compatible(candidate)) continue;
       picked.push(candidate);
       const feasible = domains.slice(depth + 1).every(d => !d.required || d.candidates.some(compatible));
-      if (feasible) search(depth + 1, optionalIncluded + Number(!domain.required));
+      if (feasible) search(depth + 1, optionalIncluded + Number(!domain.required), nextChanges);
       picked.pop();
     }
-    if (!domain.required && !result.truncated) search(depth + 1, optionalIncluded);
+    if (!domain.required && !result.truncated) search(depth + 1, optionalIncluded, changed + Number(baseline.has(domain.course.id)));
   }
-  search(0, 0);
+  search(0, 0, 0);
   const cache = new Map<string, Selection>();
-  result.schedules = best.map(found => describe(found, domains, cache));
+  result.schedules = best.map(found => describe(found, domains, cache, request.eligibility?.profile ?? emptyProfile));
   if (!result.schedules.length) result.issues.push(result.truncated
     ? 'No schedule found within the search budget. Reduce the course set or narrow sections and try again.'
     : 'No compatible schedule exists under these constraints. Review locks, cross-listed duplicates, hours, days off, or make a course optional.');

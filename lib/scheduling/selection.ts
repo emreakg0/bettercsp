@@ -51,3 +51,9 @@ export function applyGenerated(current: Selection[], generated: Selection[], tar
   if (lockedIds.some(id => !next.some(s => s.section.id === id))) throw new Error('A locked section changed. Generate again with your current locks.');
   return next;
 }
+
+export function excludedIndexIds(text: string, sourceId: string): string[] {
+  const indexes = text.split(',').map(s => s.trim()).filter(Boolean);
+  if (indexes.some(index => !/^\d{5}$/.test(index))) throw new Error('Excluded indexes must be five digits, separated by commas.');
+  return indexes.map(index => `${sourceId}:${index}`);
+}

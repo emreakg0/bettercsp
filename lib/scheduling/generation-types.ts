@@ -1,3 +1,4 @@
+import type { StudentProfile, EligibilityResult, EligibilityFinding } from '../eligibility/types.ts';
 import type { SourceNotice } from '../catalog/types.ts';
 import type { Selection } from './selection.ts';
 
@@ -14,6 +15,7 @@ export interface PreferenceWeights {
 export interface GenerationRequest {
   choices: CourseChoice[]; constraints: HardConstraints; weights: PreferenceWeights;
   preferredInstructors: string[];
+  eligibility?: { profile: StudentProfile; excludeConfirmed: boolean };
 }
 export const defaultConstraints: HardConstraints = {
   earliestStart: 0, latestEnd: 1439, daysOff: [], excludedSectionIds: [], excludedCampuses: [], lockedSectionIds: [],
@@ -29,9 +31,11 @@ export interface RankedSchedule {
   breakdown: ScorePart[]; optionalIncluded: number; omittedCourses: string[];
   restrictions: (SourceNotice & { courseCode: string; sectionIndex: string })[];
   limitations: string[];
+  eligibility: EligibilityResult[];
 }
 export interface CandidateReport {
   courseId: string; code: string; total: number; candidates: number; exclusions: Record<string, number>;
+  eligibilityExclusions?: { index: string; findings: EligibilityFinding[] }[];
 }
 export interface GenerationResult {
   schedules: RankedSchedule[]; reports: CandidateReport[]; issues: string[];

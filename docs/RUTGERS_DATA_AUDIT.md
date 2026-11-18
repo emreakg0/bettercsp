@@ -79,9 +79,20 @@ The generator blocks course-code groups evidenced by structured cross-list metad
 and conservatively, even when two indexes have no timed overlap. It preserves each enrollment
 identity. The meanings of cross-list type codes and primary-index operations are still unverified.
 Mutual-credit exclusions or co-requisites written only in arbitrary prose are surfaced, not executed
-as machine-verified eligibility rules. No automatic degree or registration eligibility audit exists.
+as machine-verified eligibility rules. At the end of Phase 3, no eligibility engine existed; Phase 4 adds the limited checks documented below, not a complete degree audit.
 
 Phase 3 excludes arranged, unknown, and inconsistent-source timing from generated timetables,
 with per-course exclusion counts; these sections remain available in manual planning. Evidence-backed
 asynchronous components remain candidates without occupying a weekly interval. Closed snapshot
 sections can be planning alternatives with explicit warnings, never guaranteed available seats.
+
+## Phase 4 eligibility follow-up
+
+[Eligibility rules](ELIGIBILITY_RULES.md) records official Math admission, SAS/CS permission and
+prerequisite guidance, supported source-text checks, and unresolved rule meanings. In particular,
+Calculus H1/index 15919 needs invitation/departmental admission review; honors membership alone
+neither grants admission nor proves incompatibility. Source delivery H remains hybrid.
+Positive single-category readable Open To lists and exact standing restrictions now support limited
+comparisons with optional explicit student facts; mixed raw-code combinations are still unverified.
+Prerequisite, grade, placement, equivalency, and permission requirements are evaluated separately.
+Generation retains unknown eligibility and only excludes supported explicit mismatches by opt-in.

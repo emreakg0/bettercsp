@@ -1,3 +1,4 @@
+import { parseStudentProfile } from '../eligibility/profile.ts';
 import type { GenerationRequest } from './generation-types.ts';
 import { weekDays } from './meetings.ts';
 
@@ -28,7 +29,13 @@ export function parseGenerationRequest(value: unknown): GenerationRequest {
   if (earliestStart > latestEnd) throw new Error('Latest end must be at or after earliest start.');
   const daysOff = strings(hard.daysOff, 7);
   if (daysOff.some(day => !weekDays.some(valid => valid === day))) throw new Error('A day-off code is invalid.');
-  return { choices, constraints: { earliestStart, latestEnd, daysOff,
+  let eligibility: GenerationRequest['eligibility'];
+  if (input.eligibility !== undefined) {
+    const settings = object(input.eligibility);
+    if (typeof settings.excludeConfirmed !== 'boolean') throw new Error('Invalid eligibility filtering policy.');
+    eligibility = { profile: parseStudentProfile(settings.profile), excludeConfirmed: settings.excludeConfirmed };
+  }
+  return { choices, eligibility, constraints: { earliestStart, latestEnd, daysOff,
     excludedSectionIds: strings(hard.excludedSectionIds), lockedSectionIds: strings(hard.lockedSectionIds, 12),
     excludedCampuses: strings(hard.excludedCampuses, 20) },
   weights: { daysOff: integer(weights.daysOff, 0, 10), laterStarts: integer(weights.laterStarts, 0, 10),

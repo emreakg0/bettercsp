@@ -40,13 +40,14 @@ Loading/error/not-found routes cover failure states. Server Components call the 
 selection and calendar views. `app/api/planner/sections/route.ts` resolves at most 100 saved section
 identities against the same catalog. `POST /api/planner/generate` validates and resolves generation
 choices against the server catalog, returning bounded ranked alternatives. There is no live SOC
-ingestion, eligibility decision engine, authentication, or database.
+ingestion, official student-record verification, authentication, or database. Phase 4 adds bounded,
+evidence-backed checks in `lib/eligibility`; WebReg remains authoritative.
 Read relevant installed Next.js guides before implementation, as required by `AGENTS.md`.
 
 ## 3. High-Level System Architecture
 
 The local catalog → normalization → search → Course Explorer and manual planner paths exist.
-Bounded generation/ranking is implemented; eligibility evaluation and recovery engines remain proposed.
+Bounded generation/ranking and supported eligibility checks are implemented; minimum-change recovery is implemented; official registration transactions remain external.
 Keep pure domain engines independent of React, network clients, and storage adapters.
 
 ```mermaid
@@ -57,11 +58,11 @@ flowchart TD
   N --> P["Catalog process cache - exists"]
   P --> S["Next.js Server Components and planner APIs - exist"]
   S --> Q["Course search and filtering - exists"]
-  S --> E["Eligibility engine - proposed"]
+  S --> E["Supported eligibility checks - exists"]
   Q --> G["Bounded schedule generation - exists"]
   E --> G
   G --> R["Preference ranking - exists"]
-  R --> X["Registration Rescue - proposed"]
+  R --> X["Registration Rescue - exists"]
   E --> X
   X --> UI["Browser / React - Course Explorer, manual planner, generator exist"]
   Q --> UI
@@ -76,7 +77,7 @@ Existing boundaries: `lib/rutgers` (raw types/normalization), `lib/catalog` (dat
 conflict detection, selection updates, save validation/client projections), `components/planner`
 (workspace/calendar/generation controls), `app/api/planner/sections` (saved-ID resolution), and
 `app/api/planner/generate` (bounded computation).
-Proposed only: `lib/eligibility`, `lib/recovery`, and durable persistence. Do not create empty modules.
+Implemented `lib/eligibility` is independent of scheduling/React; implemented `lib/recovery` adds protected repairs; durable cross-device persistence remains proposed. Do not create empty modules.
 Use shared typed inputs/results so the same deterministic engines can run outside Next.js.
 
 ## 4. Rutgers Course Data
@@ -277,60 +278,72 @@ one warm-up; not an HTTP or deployment latency guarantee):
 
 ## 7. Registration Eligibility Engine
 
-Proposed rules return findings with source evidence, uncertainty, and a next action; no guaranteed eligibility.
+Implemented Phase 4 uses `lib/eligibility/types.ts`, `profile.ts`, `academic-rules.ts`, and
+`evaluate.ts`. It consumes normalized course/section metadata, not React or scheduling state, and
+returns deterministic findings with stable rule IDs, exact source evidence, links, missing facts,
+actionable next steps, and a separate flag for supported explicit incompatibilities.
+[Eligibility rules and evidence](ELIGIBILITY_RULES.md) defines the supported grammar and limits.
 
 | Status | Meaning / action |
 | --- | --- |
-| No known blocker | Supported checks found no blocker; still verify with WebReg |
-| Requires permission | Verified rule requires permission/SPN; explain how to seek it |
-| Potentially ineligible | Evidence conflicts with supplied student context; review restriction |
-| Unknown / needs verification | Missing context, unsupported code, or ambiguous requirement; verify officially |
-Evaluate honors program membership, prerequisites, add permission/SPNs, major/school/year,
-placement, and linked-section requirements independently. Explicit honors section notes and honors
-program codes trigger review; delivery type H means hybrid and must not trigger an honors warning;
-section numbers or titles alone cannot establish honors rules. Prerequisite prose is a warning
-until its logic and the student's completion/placement evidence can be verified.
-Keep every finding; use a documented summary precedence (potentially ineligible, permission,
-unknown, then no known blocker). Missing evidence cannot yield a positive eligibility claim.
-An open section may still be restricted. WebReg remains authoritative even after all local checks.
+| No known blocker | Supported checks found no blocker; never guaranteed eligibility or enrollment |
+| Permission required | Source permission/admission requirement needs approval for the specific index |
+| Potentially ineligible | Available evidence conflicts with an explicitly supplied fact; review it |
+| Verification needed | Information is missing or the rule/code is unsupported; confirm officially |
+
+Summary precedence is Potentially ineligible, Permission required, Verification needed, then No
+known blocker. Findings remain separate, so granted add permission cannot waive prerequisites,
+school/major rules, honors admission, or placement. Missing facts are never negative evidence.
+Delivery H remains hybrid; Math honors admission uses verified departmental policy and section
+identity/designation evidence. Unknown honors-program code meanings stay explicit.
+
+The planner owns a session-only optional profile; academic information is never added to the
+versioned local draft save. `academic-profile.tsx` validates optional codes/facts on explicit update,
+and `registration-readiness.tsx` renders the same independent evaluator for manual and generated
+selections. Actionable permission/mismatch findings are prioritized; source details are disclosed
+progressively. Source links point to Rutgers instructions or the semester/campus SOC snapshot API.
+
+`GenerationRequest.eligibility` is optional, preserving Phase 3 requests. The parser validates it;
+profiles are allowlisted and contradictions rejected. Generation defaults to retaining warnings.
+Opt-in exclusion only filters explicit supported standing, complete positive declaration, and
+literal Honors College-only mismatches. Unknown or ambiguous eligibility remains a candidate.
+Locked incompatible sections yield a visible no-result state and exclusion evidence, not an unlock.
+The engine returns assessments with retained schedules and bounded examples of filtered mismatches.
+Profile/policy changes join the preview basis signature and disable Apply until regeneration.
+Timetable hard filters, eligibility decisions, ranking scores, and snapshot seats remain separate.
 
 ## 8. Registration Rescue Engine
-Proposed triggers: closure, unexpected restriction, conflict, no viable section for a required
-course, or loss of several planned courses. Reuse scheduling/eligibility rules rather than fork them.
 
-1. Capture the base schedule revision, registered/locked sections, constraints, and fresh-or-stale evidence.
-2. Freeze registered classes first. Try replacement bundles for only the problematic section.
-3. If necessary, expand affected courses incrementally; never silently remove a required course or lock.
-4. Reject hard-constraint violations; retain unresolved conditions visibly, outside verified viable plans.
-5. Rank lexicographically: preserve registered classes, minimize changed courses/sections, then soft scores.
-6. Explain changes, stale evidence, permissions, and tradeoffs. If no plan exists, explain blockers and
-   offer explicit user-controlled constraint relaxation or required-course alternatives for review.
-7. Require approval before changing a saved schedule; reject obsolete base revisions and revalidate
-   availability before saving. A save is not enrollment and cannot reserve a seat.
+Implemented Phase 5 in `lib/recovery`: provenance-aware problem detection, scoped registration
+reports, minimum-change staged search, protected apply, and signature-checked undo. It composes
+`generateSchedules` and `evaluateEligibility`; the generator's optional internal baseline/change
+budget keeps Phase 3's default objective unchanged. Registered self-reports and manual locks are
+hard constraints unless per-index exploration and apply-time overrides are explicitly approved.
+Original courses stay required; proposals first replace the problematic indexes, then expand the
+number of changed planned sections only as necessary. Weighted preferences break disruption ties.
+Search steps are bounded across stages, and truncated proposals are explicitly best-found only.
 
-```mermaid
-sequenceDiagram
-  actor Student
-  participant UI as Proposed Rescue UI
-  participant Data as Proposed data adapter
-  participant Rescue as Proposed recovery engine
-  participant Engines as Proposed eligibility and scheduler
-  participant Store as Proposed schedule store
-  UI->>Data: Refresh affected availability and restrictions
-  Data-->>UI: Evidence with freshness or failure
-  UI->>Rescue: Base revision, locks, constraints, evidence
-  Rescue->>Engines: Search minimal-change alternatives
-  Engines-->>Rescue: Candidates and unresolved blockers
-  Rescue-->>UI: Ranked plans or no-plan explanation
-  UI-->>Student: Changes, tradeoffs, and next steps
-  opt Student approves a plan
-    Student->>UI: Approve
-    UI->>Data: Revalidate availability
-    Data-->>UI: Current evidence or failure
-    UI->>Store: Save only if evidence acceptable and revision matches
-    Store-->>UI: Saved revision or conflict requiring review
-  end
-```
+`POST /api/planner/rescue` resolves scoped saved IDs and validates the same shared generation/profile
+contract. A shared 32 KB JSON reader preserves the generation endpoint's existing input bounds.
+`lib/availability` timestamps and caches optional server checks, but the investigated open-sections
+response has unverified campus scope/completeness; production recovery remains snapshot-only.
+Successful unverified retrievals, stale attempts, first failures, and snapshot-only mode stay distinct.
+No unverified absence is inferred closed, and no timestamp implies a guaranteed WebReg seat.
+
+`rescue-panel.tsx`/`rescue-results.tsx` reuse calendar/readiness components, shared preference settings,
+source instructions, and the existing design. Full before/after and alternative comparisons precede
+explicit approval. Unknown eligibility stays provisional. Applying changes only local selections;
+new indexes are Planned. Historical registered reports are retained for explicit WebReg reconciliation,
+with further automatic planning paused while those reports remain outside the draft. Undo restores
+sections/locks/reports together only when the post-apply signature is unchanged. Stale proposals
+cannot be applied. Ordinary generation/manual replacement also respect registered protection.
+
+Version 1 local saves gain optional validated `registrationStatuses` (up to 200 scoped reports);
+older saves still load. Academic profile data remains session-only. Generator settings are now
+workspace-owned and shared with Rescue; neither preferences nor reports trigger autonomous requests.
+
+Algorithm, availability evidence, performance, approval/undo guarantees, and unresolved rules are
+recorded in [Registration Rescue](REGISTRATION_RESCUE.md). No WebReg transaction or monitoring exists.
 
 ## 9. Frontend Architecture and UX
 Implemented `/planner`: course search/selection beside a weekly calendar on desktop, with a
@@ -338,7 +351,7 @@ course/calendar button switcher below 1000px. Existing catalog search controls a
 are extended rather than duplicated. Calendar blocks link to selected section details; remove and
 replace preserve unrelated choices. The Course Explorer remains at `/`. Existing Geist typography,
 spacing, and components are retained; accent colors now use Rutgers scarlet (`#cc0033`).
-Schedule comparison, preference controls, readiness review, and Rescue Mode remain proposed.
+Schedule comparison, preference controls, readiness review, and explicit-approval Rescue are implemented.
 Use focused panels and progressive disclosure; avoid cluttered dashboards and unnecessary animation.
 Keep domain results outside rendering logic. Show loading, empty, failure, stale, and partial-result states.
 Provide keyboard controls, visible focus, semantic labels, accessible list alternatives to calendar drag,
@@ -355,7 +368,7 @@ and textual conflict/restriction explanations; never rely on color alone. Preser
 | Availability | Current development snapshot; separate refresh and freshness metadata proposed |
 | Eligibility | Source warnings implemented; rules and student-context evaluation proposed |
 Implemented browser saves use `bettercsp:planner:v1:<year-term-campus>` and store only version,
-source ID, section IDs, and optional locked section IDs. On hydration, saved data is validated and
+source ID, section IDs, optional locked section IDs, and scoped self-reported registration statuses. On hydration, saved data is validated and
 resolved through the catalog endpoint before editing or saving is enabled, preventing an empty initial render from overwriting
 an existing save. Missing IDs remain saved and visibly unresolved until explicitly removed.
 Read/restore failures retain the previous save and offer retry or an explicit new schedule;
@@ -392,7 +405,7 @@ prefill/deep-link support or send personal context in URLs. Only local snapshot 
 Implemented: `lib/catalog/catalog.test.ts` uses `node:test` for normalization, full snapshot counts,
 identity collisions, Calculus meetings/indexes, unknown metadata, honors signal boundaries,
 nullable credits, malformed input, search/filtering, and pagination. `lib/scheduling` adds meeting,
-generation, ranking, request-boundary, lock/save, and apply tests. The 55 current tests include real
+generation, ranking, request-boundary, lock/save, and apply tests. The Phase 3 tests include real
 Data Structures/Calculus bundles, late-component overlaps, async/arranged/unknown timing,
 required-linkage uncertainty, cross-list groups, hard constraints, optional coverage, score metrics,
 all soft preferences, deterministic ordering, duplicate elimination, bounded large products,
@@ -400,7 +413,9 @@ small-case exhaustive enumeration, and preservation of retained/locked sections 
 Production browser checks cover desktop and 375px mobile: multi-course selection, preview-only
 save behavior, comparison/navigation, lock restore, apply/undo, infeasible constraints, stale results,
 network failure, request validation/body limits, and the unchanged Course Explorer.
-Future coverage beyond implemented guarantees:
+The full suite currently has 88 tests, including focused recovery/availability/state cases. Phase 4 adds real H1/hybrid regressions, supported/unknown rule parsing, missing versus explicit
+facts, permission/prerequisite independence, opt-in filtering, score invariance, and profile boundary
+validation. Future coverage beyond implemented guarantees:
 - Normalization: nullable credits, duplicate course identities, unknown codes, malformed rows, HTML notes.
 - Eligibility: honors signals with/without program data, permission, prerequisites, placement, major/school,
   contradictory evidence, missing context, and open-but-restricted sections.
@@ -416,8 +431,8 @@ Use representative small fixtures and injected clocks/adapters; avoid live SOC d
 
 ## 14. Implementation Roadmap
 
-Phases 1–3 below reflect implemented work. Eligibility decision rules, live ingestion, and recovery
-remain future work; generation does not establish registration readiness.
+Phases 1–5 below reflect implemented work. Eligibility checks are deliberately limited; live ingestion,
+official record verification remain future work; Rescue changes local planning only. Generation does not guarantee registration.
 
 | Phase | Scope / completion evidence needed |
 | --- | --- |
@@ -425,8 +440,9 @@ remain future work; generation does not establish registration readiness.
 | 2 — Interactive Planner | Implemented: manual sections, weekly calendar, conflicts, local saves |
 | 2.5 — Data Correctness | Implemented: delivery/honors separation, async/arranged semantics, readable source warnings |
 | 3 — Generation and Ranking | Implemented: bounded deterministic generation, hard constraints, weighted ranking, previews/comparison, locks and explicit apply |
-| 4 — Registration Rescue | Suggested automatic repair, backups, approval-based recovery workflows |
-| 5 — Advanced Features | Verified commute scoring, optional accounts, course monitoring, optional AI assistance |
+| 4 — Registration Intelligence | Implemented: independent eligibility checks, optional profile, readiness evidence/actions, opt-in supported mismatch filtering |
+| 5 — Registration Rescue | Implemented: scoped registration reports, protected minimum-change repairs, source-aware availability fallback, explicit apply and safe undo |
+| Future — Advanced Features | Verified commute scoring, optional accounts, course monitoring, optional AI assistance |
 AI may explain results or assist discovery; it must not decide scheduling correctness or eligibility.
 
 ## 15. Architecture Decision Records
@@ -451,8 +467,8 @@ Compact decision log; status describes policy/design, not implementation complet
 - Establish SOC update cadence, availability endpoint shape, cache headers/rate guidance, and outage behavior.
 - No historical availability series exists here; the single snapshot cannot predict seat openings.
 - Verify permitted WebReg handoff capabilities; no enrollment API or deep-link contract is established.
-- No independently verified deployment, shared cache, durable store, accounts, monitoring, or eligibility
-  decision engine exists. Bounded weekly scheduling is implemented; separately required registration bundles remain unverified. Current process cache is disposable; snapshot capture time is unknown.
+- No independently verified deployment, shared cache, durable store, accounts, monitoring, or official student-record
+  verification exists. Bounded weekly scheduling is implemented; separately required registration bundles remain unverified. Current process cache is disposable; snapshot capture time is unknown.
 
 Sources inspected: `AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`, `tsconfig.json`,
 `next.config.ts`, `eslint.config.mjs`, `postcss.config.mjs`, `app/page.tsx`, `app/layout.tsx`,

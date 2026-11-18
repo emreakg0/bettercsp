@@ -3,7 +3,7 @@ import type { HardConstraints } from './generation-types.ts';
 import { isScheduled, meetingsOverlap } from './meetings.ts';
 
 // Candidate filtering reuses normalized meeting semantics; unknown timing is never certified.
-export function exclusionReason(section: Section, hard: HardConstraints): string | null {
+export function exclusionReason(section: Pick<Section, 'id' | 'meetings' | 'notices' | 'campuses'>, hard: HardConstraints): string | null {
   if (hard.excludedSectionIds.includes(section.id)) return 'Excluded section';
   if (!section.meetings.length || section.meetings.some(m => !isScheduled(m) && m.timing !== 'asynchronous')) return 'Arranged or unknown timing';
   if (section.notices.some(n => n.field === 'Meeting timing inconsistency')) return 'Inconsistent source timing';

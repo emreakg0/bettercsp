@@ -144,3 +144,25 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .schedule-generator > summary h2 { display: inline-block; }
 .selected-section > .text-button { margin-right: 16px; }
 .generator-choices label, .generation-checks label { min-height: 44px; }
+.academic-profile { margin-top: 24px; border-block: 1px solid var(--line); padding: 14px 0; }
+.academic-profile > summary { cursor: pointer; min-height: 44px; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.academic-profile label { font-size: 12px; }.academic-profile input, .academic-profile select { margin-top: 6px; }
+.academic-checkbox { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; margin: 12px 0; }
+.academic-checkbox input { width: 18px; min-height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.registration-readiness { margin: 24px 0; }.registration-readiness h3 { font-size: 17px; }
+.readiness-section { border-top: 1px solid var(--line); padding: 10px 0; }
+.readiness-section > summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 10px 0; cursor: pointer; font-size: 12px; }
+.readiness-section > summary span { font-weight: 600; color: var(--accent); }
+.readiness-findings { list-style: none; padding: 0; font-size: 12px; }.readiness-findings > li { border-left: 2px solid var(--line); padding: 8px 14px; margin: 12px 0; }
+.readiness-findings h4 { font-size: 12px; font-weight: 600; }.readiness-findings p { margin: 6px 0; overflow-wrap: anywhere; }
+.readiness-findings a { color: var(--accent); text-decoration: underline; }.readiness-findings summary { min-height: 44px; padding: 10px 0; font-size: 12px; }
+.rescue-panel { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 18px 22px; margin-top: 24px; }
+.rescue-panel > summary { cursor: pointer; min-height: 44px; padding: 8px 0; font-weight: 600; font-size: 15px; }
+.rescue-panel > p, .rescue-results > p { font-size: 13px; margin: 12px 0; }
+.rescue-panel h3 { font-size: 15px; margin-top: 18px; }.rescue-panel h4 { font-size: 13px; margin-top: 14px; font-weight: 600; }
+.rescue-panel fieldset { border: 0; margin: 18px 0; padding: 0; }.rescue-panel legend { font-size: 12px; font-weight: 600; }
+.rescue-results { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
+.availability-evidence { padding: 12px 16px; background: white; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+.registration-report { display: block; font-size: 12px; margin: 12px 0; }.registration-report select { margin-top: 6px; }
+.protection-overrides { border-left: 2px solid var(--accent); padding-left: 16px; margin-top: 18px; font-size: 13px; }
+@media (max-width: 760px) { .rescue-panel { padding: 12px; } }

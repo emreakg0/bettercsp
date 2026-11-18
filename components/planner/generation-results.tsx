@@ -1,3 +1,5 @@
+import { RegistrationReadiness, ReadinessFindings } from './registration-readiness';
+import type { StudentProfile } from '@/lib/eligibility/types';
 import { useState } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { formatTime } from '@/lib/scheduling/meetings';
@@ -12,20 +14,20 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, canApply }: {
-  result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule) => void; canApply: boolean;
+export function GenerationResults({ result, stale, onApply, canApply, profile }: {
+  profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule) => void; canApply: boolean;
 }) {
   const [index, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const schedule = result.schedules[index];
   return <section className="generation-results" aria-label="Generated schedules">
     <h3>{result.schedules.length} ranked {result.schedules.length === 1 ? 'schedule' : 'schedules'}</h3>
     <p className="muted">{result.visited.toLocaleString()} search steps · {result.completed.toLocaleString()} combinations scored. {result.truncated ? 'Search budget reached: these are the best found, not guaranteed global optima.' : 'Search completed; showing the best retained alternatives.'}</p>
-    {stale && <p role="status" className="snapshot-note">Your choices, preferences, locks, or manual schedule changed. Generate again before applying.</p>}
+    {stale && <p role="status" className="snapshot-note">Your choices, preferences, academic information, locks, or manual schedule changed. Generate again before applying.</p>}
     {!!result.issues.length && <ul className="generation-notes">{result.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
     <details><summary>Candidate sections and exclusions</summary>{result.reports.map(report => <p className="muted" key={report.courseId}>
       {report.code}: {report.candidates} of {report.total} sections available to the solver.
       {Object.entries(report.exclusions).map(([reason, count]) => ` ${reason}: ${count}.`).join('')}
-    </p>)}</details>
+    </p>)}{result.reports.map(report => !!report.eligibilityExclusions?.length && <details key={report.courseId}><summary>{report.code}: excluded eligibility mismatches (up to 20 shown)</summary>{report.eligibilityExclusions.map(item => <div key={item.index}><h4>Index {item.index}</h4><ReadinessFindings findings={item.findings} /></div>)}</details>)}</details>
     {schedule && <>
       <nav className="generation-navigation" aria-label="Generated schedule navigation">
         <button className="text-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>
@@ -37,6 +39,7 @@ export function GenerationResults({ result, stale, onApply, canApply }: {
       <details><summary>Why this score?</summary><ul className="generation-notes">{schedule.breakdown.map(part => <li key={part.label}>{part.label}: {part.amount} penalty points</li>)}</ul>
         <p className="muted">Days and hours are weighted using the controls above. Daily start times are averaged across class days. Eligibility, honors status, and snapshot seats never change this score.</p></details>
       {!!schedule.omittedCourses.length && <p>Optional courses omitted: {schedule.omittedCourses.join(', ')}.</p>}
+      <RegistrationReadiness selections={schedule.selections} profile={profile} />
       <div className="generation-actions"><button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
         <button className="button" disabled={stale || !canApply} onClick={() => onApply(schedule)}>Apply this schedule</button></div>
       {compared !== null && <div className="schedule-comparison"><h4>Compare with schedule {compared + 1}</h4>
