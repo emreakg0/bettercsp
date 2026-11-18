@@ -413,7 +413,7 @@ and textual conflict/restriction explanations; never rely on color alone. Preser
 | Catalog/search results | Server-fetched, normalized, versioned; URL filters for shareable search |
 | Schedule selections | Client draft; derive meetings/conflicts rather than duplicate them |
 | Preferences | Proposed client state and versioned save |
-| Saved schedules | Implemented versioned localStorage draft; export/import and revision checks proposed |
+| Saved schedules | Versioned working draft and separate browser-local named library |
 | Availability | Current development snapshot; separate refresh and freshness metadata proposed |
 | Academic planning profile | Optional versioned browser storage, reusable across semester and campus drafts |
 | Eligibility | Existing request contract projected from the active academic profile |
@@ -423,8 +423,21 @@ resolved through the catalog endpoint before editing or saving is enabled, preve
 an existing save. Missing IDs remain saved and visibly unresolved until explicitly removed.
 Read/restore failures retain the previous save and offer retry or an explicit new schedule;
 write failures keep the draft in memory with a warning. Saves do not sync across devices and can
-be cleared by browser settings. Concurrent tabs are last-writer-wins; there is no revision merging.
-Export/import, multiple named schedules, and cross-device saves remain proposed.
+be cleared by browser settings. Working-draft and library writes check the last read value for edits from another tab. There is no
+revision merging or cross-device synchronization.
+
+The library key `bettercsp:schedule-library:v1:<sourceId>` holds up to 20 snapshots with UUIDs,
+names, source-scoped indexes and locks, creation/update times and a content revision that advances
+on explicit Update. The library never stores registration reports or profiles. Course titles, credits
+and meetings are resolved through the existing section endpoint. Its migration offers a named copy
+of a validated legacy draft (including unresolved indexes), with an accept/dismiss marker stored
+alongside the collection. The original v1 draft remains the source of registration reports.
+
+My Schedule uses an optional `saved` URL parameter for preview and displays differences from the
+draft. Explicit Use preserves all reports and existing manual locks, and refuses a snapshot that
+omits protected indexes, has unresolved sections or has a known overlap. Activation replaces only
+the local working draft, provides one-step in-memory undo, and invalidates previous generation and
+Rescue results. Saving a generated preview as a named schedule does not activate it.
 
 ### Academic planning profile
 

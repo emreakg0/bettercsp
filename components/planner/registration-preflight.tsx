@@ -122,7 +122,7 @@ function PreflightAlternatives({ row, selections, profile, planning, constraints
       {!!ranked.length && <p className="muted">Showing up to six sections with fewer known blockers first. Check current seats and requirements before choosing.</p>}
     </>}
     {onRescue && <button className="text-button" onClick={() => onRescue(section.id)}>{rescueLabel ?? 'Review a repair in Registration Rescue'}</button>}
-    {!onRescue && <p className="muted">Apply the preview first to use Rescue with this schedule.</p>}
+    {!onRescue && <p className="muted">Rescue works from your working draft. Use this schedule before starting a repair.</p>}
     {row.issues.some(issue => issue.url?.includes('travel-conflict')) &&
       <p className="muted">Recheck campus gaps after any Rescue repair. Rescue does not currently enforce this travel policy.</p>}
     <a className="back-link" href={sourceLinks.soc}>Verify seats in Rutgers Schedule of Classes ↗</a>

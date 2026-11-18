@@ -237,7 +237,7 @@ try {
     const restored = await generate(page);
     assert.deepEqual(restored.request.constraints.lockedSectionIds, []);
     assert.ok(restored.schedules.length > 1);
-    assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedDiscrete);
+    assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), JSON.parse(savedDiscrete));
     await page.getByLabel(`Keep section ${discreteSection.number} for 01:198:205`, { exact: true }).check();
     const single = await generate(page);
     assert.deepEqual(single.request.constraints.lockedSectionIds, [discreteSection.id]);

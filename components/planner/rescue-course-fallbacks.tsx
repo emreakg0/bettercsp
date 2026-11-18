@@ -11,9 +11,9 @@ import { excludedIndexIds, type Selection } from '@/lib/scheduling/selection';
 import { WeeklyCalendar } from './weekly-calendar';
 import { RegistrationIndex } from './registration-index';
 
-export function RescueCourseFallbacks({ sourceId, draft, target, academic, profile, request, excludedIndexes, ready, active, onApply, onPlanLater, onMoreRepairs }: {
+export function RescueCourseFallbacks({ sourceId, draft, target, academic, profile, request, excludedIndexes, ready, active, preparedMode = false, prepared, onApply, onPlanLater, onMoreRepairs }: {
   sourceId: string; draft: RescueDraft; target: Selection; academic: AcademicPlanningProfile; profile: StudentProfile;
-  request: RescueRequest; excludedIndexes: string; ready: boolean; active: boolean;
+  request: RescueRequest; excludedIndexes: string; ready: boolean; active: boolean; preparedMode?: boolean; prepared?: CourseFallbackResult | null;
   onApply: (targetId: string, replacement: Selection, basis: string) => boolean; onPlanLater: (code: string) => void; onMoreRepairs: () => void;
 }) {
   const [response, setResponse] = useState<{ key: string; value?: CourseFallbackResult; error?: string } | null>(null);
@@ -34,7 +34,7 @@ export function RescueCourseFallbacks({ sourceId, draft, target, academic, profi
   const canSearch = ready && !protectedTarget && draft.selections.length <= 12;
   const stale = !!response?.value && response.key !== requestKey;
   const current = canSearch && response?.key === requestKey ? response : null;
-  const result = current?.value;
+  const result = preparedMode ? prepared : current?.value;
   const preview = review?.key === requestKey ? review.selection : null;
   const alternatives = matches.flatMap(match => {
     const sections = result?.options.filter(option => option.selection.course.code === match.code) ?? [];
@@ -50,7 +50,7 @@ export function RescueCourseFallbacks({ sourceId, draft, target, academic, profi
   const previewSelections = preview ? [...kept, preview] : [];
 
   useEffect(() => {
-    if (!active || !canSearch || current) return;
+    if (preparedMode || !active || !canSearch || current) return;
     const controller = new AbortController();
     async function search(): Promise<void> {
       try {
@@ -67,7 +67,7 @@ export function RescueCourseFallbacks({ sourceId, draft, target, academic, profi
     }
     void search();
     return () => controller.abort();
-  }, [active, canSearch, current, excludedIndexes, payload, requestKey, sourceId]);
+  }, [active, canSearch, current, excludedIndexes, payload, preparedMode, requestKey, sourceId]);
 
   const options = (entries: CourseFallbackResult['options']) => <ul className="generation-notes">{entries.map(({ selection, needsComponentReview }) => {
     const { section: option } = selection;
@@ -91,13 +91,14 @@ export function RescueCourseFallbacks({ sourceId, draft, target, academic, profi
       <button className="text-button" onClick={onMoreRepairs}>Review protected repair options</button></div>
       : !ready ? <p>Resolve missing sections or earlier registration reports in My Schedule before searching.</p>
       : draft.selections.length > 12 ? <p>Rescue can compare up to 12 selected sections. Review your saved sections first.</p> : null}
-    {canSearch && !current && <p role="status">{stale ? 'The plan or academic information changed. Checking fresh alternatives…' : 'Checking alternatives around your other classes…'} Your schedule is unchanged.</p>}
+    {!preparedMode && canSearch && !current && <p role="status">{stale ? 'The plan or academic information changed. Checking fresh alternatives…' : 'Checking alternatives around your other classes…'} Your schedule is unchanged.</p>}
     {current?.error && <div role="alert"><p>{current.error} Your schedule is unchanged.</p>
       <button className="text-button" onClick={() => setRetry(attempt => attempt + 1)}>Retry alternatives</button></div>}
     {result && <>
       <h3>Replacement options</h3>
-      <p>Every other selected section stays in place, including {kept.filter(s => protectedIds.includes(s.section.id)).length} protected sections. Confirm current seats in <a className="back-link" href={sourceLinks.soc}>Rutgers Schedule of Classes</a> and verify registration in WebReg.</p>
+      <p>Every other selected section stays in place, including {kept.filter(s => protectedIds.includes(s.section.id)).length} protected sections. Current seats are unverified. Check <a className="back-link" href={sourceLinks.soc}>Rutgers Schedule of Classes</a> and verify registration in WebReg.</p>
       {result.issue && <p role="status">{result.issue}</p>}
+      {preparedMode && draft.selections.some(item => item !== target && draft.statuses[item.section.id] === 'failed') && <p>Other failed sections stay in this preview and still need attention.</p>}
       {travelWarning && <p className="snapshot-note">Some of your kept classes already have a short campus gap under the Rutgers travel rule. Check that gap before registering.</p>}
       {!!sameCourse.length && <><h4>Other sections of {course.code}</h4>
         {course.prerequisites && <p>Course prerequisites still apply when you switch sections.</p>}{options(sameCourse)}</>}
@@ -119,8 +120,8 @@ export function RescueCourseFallbacks({ sourceId, draft, target, academic, profi
       {preview && <div className="schedule-status">
         <h4 tabIndex={-1} ref={previewHeading}>Review before applying</h4>
         <p>{course.code} · index {section.index} → {preview.course.code} · index {preview.section.index}. All other sections stay as selected.</p>
-        <WeeklyCalendar selections={previewSelections} idPrefix="rescue-course" />
-        <ul className="generation-notes">{previewSelections.map(item => <li id={`rescue-course-${item.section.index}`} key={item.section.id}>
+        <WeeklyCalendar selections={previewSelections} idPrefix={preparedMode ? 'prepared-course' : 'rescue-course'} />
+        <ul className="generation-notes">{previewSelections.map(item => <li id={`${preparedMode ? 'prepared-course' : 'rescue-course'}-${item.section.index}`} key={item.section.id}>
           {item.course.code} · index {item.section.index} · {item === preview ? 'Proposed' : 'Preserved'}
         </li>)}</ul>
         <label className="academic-checkbox"><input type="checkbox" checked={!!review?.approved} onChange={event => setReview({ key: requestKey, selection: preview, approved: event.target.checked })} />I approve this planner change and will verify requirements and seats with Rutgers.</label>

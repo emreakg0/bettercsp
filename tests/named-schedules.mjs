@@ -1,0 +1,151 @@
+// Run against the production build with the same browser settings as planner-ux.mjs.
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
+const origin = process.env.PLANNER_URL || 'http://localhost:3000';
+const source = '2027-1-NB', draftKey = 'bettercsp:planner:v1:' + source, libraryKey = 'bettercsp:schedule-library:v1:' + source;
+const ids = ['14411', '14412', '14413', '99999'].map(index => source + ':' + index);
+const rawDraft = (sectionIds, lockedSectionIds = [], registrationStatuses = {}) => JSON.stringify({ version: 1, sourceId: source, sectionIds, lockedSectionIds, registrationStatuses });
+const read = (page, key) => page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
+async function seed(page, raw) {
+  await page.goto(origin);
+  await page.evaluate(([key, value]) => localStorage.setItem(key, value), [draftKey, raw]);
+  await page.goto(origin + '/planner?view=schedule');
+}
+try {
+  for (const width of [1440, 375]) {
+    const page = await browser.newPage({ viewport: { width, height: 860 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await seed(page, rawDraft([ids[0]]));
+    const library = page.getByRole('complementary', { name: 'My Saved Schedules' });
+    const working = library.getByRole('button', { name: /^Working draft/ });
+    const operation = page.getByRole('form', { name: 'Schedule operation' });
+    const preview = page.getByRole('region', { name: 'Saved schedule preview' });
+    const row = name => library.getByRole('listitem').filter({ has: page.getByText(name, { exact: true }) });
+    const named = name => row(name).locator('button.library-selection');
+    async function chooseSection(index) {
+      await page.getByRole('button', { name: 'Build', exact: true }).click();
+      await page.getByLabel('Find a course', { exact: true }).fill('01:198:205');
+      const course = page.locator('.planner-course').filter({ has: page.getByText('01:198:205', { exact: true }) }).first();
+      const specific = course.getByText('Choose a specific section', { exact: true });
+      if (await specific.evaluate(el => !el.parentElement.open)) await specific.click();
+      const section = course.locator('details.section').filter({ has: page.locator('summary', { hasText: 'Index ' + index }) });
+      await section.locator('summary').click();
+      await section.getByRole('button', { name: /Replace with section|Choose section/ }).click();
+      await page.locator('#selected-' + index).waitFor();
+    }
+    async function save(name, index) {
+      await library.getByRole('button', { name: 'Save as new schedule' }).click();
+      const input = operation.getByLabel('Schedule name');
+      await input.fill(name);
+      await input.press('Enter');
+      await preview.getByRole('heading', { name, exact: true }).waitFor();
+      await preview.locator('#named-preview-' + index).waitFor();
+      assert.ok(await preview.locator('.calendar-event').count());
+    }
+    async function menu(name, action) {
+      const menu = row(name).getByText('Schedule actions');
+      if (await menu.evaluate(el => !el.parentElement.open)) await menu.press('Enter');
+      await row(name).getByRole('button', { name: action, exact: true }).click();
+    }
+    await library.getByRole('button', { name: 'Save previous plan as a copy' }).click();
+    await named('Previous planner schedule').waitFor();
+    await save('Preferred', '14411');
+    await chooseSection('14412');
+    await save('Tuesday', '14412');
+    await chooseSection('14413');
+    await save('Friday', '14413');
+    await named('Preferred').press('Enter');
+    await preview.locator('#named-preview-14411').waitFor();
+    await page.goBack();
+    await preview.locator('#named-preview-14413').waitFor();
+    await page.goForward();
+    await preview.locator('#named-preview-14411').waitFor();
+    assert.deepEqual((await read(page, draftKey)).sectionIds, [ids[2]]);
+    await preview.getByText('Check registration readiness', { exact: true }).click();
+    assert.ok(await preview.locator('.registration-preflight').evaluate(el => el.open));
+    await menu('Tuesday', 'Rename');
+    await operation.getByLabel('Schedule name').fill('Second choice');
+    await operation.getByLabel('Schedule name').press('Enter');
+    await named('Second choice').waitFor();
+    await menu('Preferred', 'Duplicate');
+    await preview.getByRole('heading', { name: 'Backup — Preferred', exact: true }).waitFor();
+    assert.equal((await read(page, libraryKey)).schedules.length, 5);
+    await page.reload();
+    await preview.locator('#named-preview-14411').waitFor();
+    await named('Second choice').waitFor();
+    assert.equal(await library.getByRole('button', { name: 'Save previous plan as a copy' }).count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await menu('Backup — Preferred', 'Update from working draft');
+    await operation.getByRole('button', { name: 'Update saved schedule' }).click();
+    await preview.locator('#named-preview-14413').waitFor();
+    const data = await read(page, libraryKey);
+    assert.deepEqual(data.schedules.find(item => item.name === 'Preferred').sectionIds, [ids[0]]);
+    assert.equal(data.schedules.find(item => item.name === 'Backup — Preferred').revision, 2);
+    await menu('Friday', 'Delete');
+    await operation.getByText('Delete “Friday” from your library?').waitFor();
+    await operation.getByRole('button', { name: 'Cancel' }).click();
+    await named('Friday').waitFor();
+    await menu('Friday', 'Delete');
+    await operation.getByRole('button', { name: 'Delete schedule' }).click();
+    await row('Friday').waitFor({ state: 'detached' });
+    assert.equal((await read(page, libraryKey)).schedules.length, 4);
+    await named('Preferred').click();
+    await preview.getByRole('button', { name: 'Use this schedule' }).click();
+    await operation.getByRole('button', { name: 'Confirm use this schedule' }).click();
+    await page.locator('#selected-14411').waitFor();
+    await page.getByRole('button', { name: 'Undo schedule switch' }).click();
+    await page.locator('#selected-14413').waitFor();
+    await page.locator('#selected-14413 .registration-report select').selectOption('registered');
+    await page.locator('#selected-14413').getByRole('button', { name: /^Lock section/ }).click();
+    await named('Preferred').click();
+    await preview.getByText(/omits registered indexes 14413/).waitFor();
+    assert.equal(await preview.getByRole('button', { name: 'Use this schedule' }).isDisabled(), true);
+    await working.click();
+    assert.equal(await page.locator('#selected-14413 .registration-report select').inputValue(), 'registered');
+    assert.deepEqual((await read(page, draftKey)).lockedSectionIds, [ids[2]]);
+    await page.getByRole('button', { name: 'Build', exact: true }).click();
+    await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
+    await page.getByRole('button', { name: 'Save as new named schedule' }).click();
+    await operation.getByLabel('Schedule name').fill('Generated copy');
+    await operation.getByRole('button', { name: 'Save schedule' }).click();
+    await preview.getByRole('heading', { name: 'Generated copy' }).waitFor();
+    assert.deepEqual((await read(page, draftKey)).sectionIds, [ids[2]]);
+    await preview.getByRole('button', { name: 'Use this schedule' }).click();
+    await operation.getByRole('button', { name: 'Confirm use this schedule' }).click();
+    await page.locator('#selected-14413').waitFor();
+    assert.equal(await page.locator('#selected-14413 .registration-report select').inputValue(), 'registered');
+    await page.getByRole('button', { name: 'Build', exact: true }).click();
+    await page.getByText(/Generate again before applying/).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Apply this schedule' }).isDisabled(), true);
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+  const page = await browser.newPage();
+  const legacy = rawDraft([ids[0], ids[3]], [ids[0], ids[3]], { [ids[0]]: 'registered' });
+  await seed(page, legacy);
+  await page.getByText(/99999 is absent from this catalog/).waitFor();
+  await page.getByRole('button', { name: 'Save previous plan as a copy' }).click();
+  const named = (await read(page, libraryKey)).schedules[0];
+  assert.deepEqual(named.sectionIds, [ids[0], ids[3]]);
+  assert.deepEqual(named.lockedSectionIds, [ids[0], ids[3]]);
+  assert.equal('registrationStatuses' in named, false);
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), draftKey), legacy);
+  await page.getByRole('button', { name: /^Previous planner schedule/ }).click();
+  await page.getByText('Unavailable indexes: 99999.').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Use this schedule' }).isDisabled(), true);
+  await page.evaluate(key => localStorage.setItem(key, '{invalid'), libraryKey);
+  await page.reload();
+  await page.getByRole('alert').getByText(/stored library has been kept/).waitFor();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), libraryKey), '{invalid');
+  const blocked = await browser.newPage();
+  await blocked.addInitScript(key => {
+    const get = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (name) { if (name === key) throw new DOMException('Blocked', 'SecurityError'); return get.call(this, name); };
+  }, libraryKey);
+  await blocked.goto(origin + '/planner?view=schedule');
+  await blocked.getByRole('alert').getByText(/stored library has been kept/).waitFor();
+  assert.equal(await blocked.getByRole('button', { name: 'Save as new schedule' }).isDisabled(), true);
+  console.log('PASS: named schedules on desktop/mobile, creation, preview/history, rename, duplicate, update, cancel/delete, activation and undo, protected reports, generated save, legacy import, missing indexes, and corrupt/blocked storage.');
+} finally { await browser.close(); }

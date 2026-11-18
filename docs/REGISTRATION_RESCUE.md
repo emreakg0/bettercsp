@@ -195,6 +195,32 @@ schedule and generator choices while the applied draft and its choices still mat
 schedule is modified on search. Only exact target identity and derived course codes are sent in
 addition to normal Rescue inputs. No new availability call is made for the course fallback.
 
+## Prepared registration backups
+
+My Schedule prepares alternatives for up to 12 selected sections. Preparation skips registered
+and manually locked targets. The existing Rescue endpoint batches the strict single-index
+search while fixing every other index, with a combined solver budget of at most 12,000 steps
+and up to 10 candidates per target. The cache can include same-course alternatives and courses
+supported by the existing degree rules. Documented postponement guidance is rendered from the
+current academic profile and existing rule sources.
+
+The versioned cache lives in sessionStorage and expires after 24 hours. It uses the current
+catalog revision and a SHA-256 digest of the source, draft identities and locks, academic inputs,
+and search preferences. It stores no copy of the academic profile. Tab reloads can restore the
+cache when the working inputs still match. Only the newest successful preparation is retained
+for each semester and campus in the tab. Catalog changes are detected on reload and preparation.
+
+Registration Mode updates the same registration reports as My Schedule. A new report on an
+existing index can reuse the timetable cache. Before displaying an option, the planner rechecks
+protections, timing, travel, eligibility, and whether the option depends on another failed course.
+The proposal is then tied to the live draft signature including reports. Approval, application,
+and undo use the existing Rescue path. Reporting a failure makes no network request. Missing,
+expired, or unsuitable prepared results link to an on-demand Rescue search. An approved change
+to the timetable invalidates that preparation even when other failed sections remain.
+
+Prepared options remain snapshot-based. WebReg is the authority on current seats, eligibility
+and actual enrollment.
+
 ## Unresolved Rutgers rules and non-goals
 
 The [data audit](RUTGERS_DATA_AUDIT.md) and [eligibility rules](ELIGIBILITY_RULES.md) remain authoritative

@@ -19,7 +19,7 @@ export default async function PlannerPage({ searchParams }: {
     <header className="intro"><h1>Schedule Planner</h1></header>
     <div className="catalog-context"><span>{catalogSource.label}</span><Link className="back-link" href="/">Browse Course Explorer ↗</Link></div>
     <p className="muted planner-source-note">Seat labels use a snapshot. Verify availability and eligibility with Rutgers; applying a plan does not register you.</p>
-    <PlannerWorkspace sourceId={catalogSource.id} courses={result.courses.map(plannerCourse)}>
+    <PlannerWorkspace sourceId={catalogSource.id} catalogRevision={catalog.revision} courses={result.courses.map(plannerCourse)}>
       <div id="planner-search"><SearchControls pathname="/planner" query={query} subject={subject} subjects={catalog.subjects} /></div>
       <div className="results-heading"><h2>Find your courses</h2><p role="status">{result.total.toLocaleString('en-US')} {result.total === 1 ? 'course' : 'courses'}</p></div>
       {result.total === 0 && <div className="empty-state"><h3>No courses found.</h3><p>Try a shorter title, course code, or another subject.</p><Link href="/planner">Clear search and filters →</Link></div>}

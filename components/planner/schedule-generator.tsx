@@ -10,11 +10,12 @@ import { GenerationResults } from './generation-results';
 
 export interface GeneratorChoice { courseId: string; code: string; title: string; required: boolean; campuses: string[]; keepSection?: boolean }
 // New orchestration is limited to generation requests; manual persistence remains workspace-owned.
-export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, statuses, ready, onApply, profile, planning, preflightConstraints, settings, onSettingsChange, picker, active, onRemoveCourse, onSearch, onReviewSchedule }: {
+export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, statuses, ready, onApply, onSave, draftRevision, profile, planning, preflightConstraints, settings, onSettingsChange, picker, active, onRemoveCourse, onSearch, onReviewSchedule }: {
   planning: PlanningContext; preflightConstraints: HardConstraints | null; statuses: RegistrationStatuses;
   picker: ReactNode; active: boolean; onRemoveCourse: (courseId: string) => void; onSearch: () => void; onReviewSchedule: () => void;
   settings: GenerationSettings; onSettingsChange: (settings: GenerationSettings) => void; profile: StudentProfile; sourceId: string; choices: GeneratorChoice[]; onChoicesChange: (choices: GeneratorChoice[]) => void;
   selections: Selection[]; locks: string[]; ready: boolean;
+  onSave: (schedule: RankedSchedule) => void; draftRevision: number;
   onApply: (schedule: RankedSchedule, targetIds: string[], rescueSectionId?: string) => boolean;
 }) {
   const [excludeConfirmed, setExcludeConfirmed] = useState(false);
@@ -23,7 +24,7 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
   const [response, setResponse] = useState<{ result: GenerationResult; basis: string; serial: number; emptyBatch?: boolean } | null>(null);
   const controller = useRef<{ abort: AbortController; more: boolean } | null>(null), consumed = useRef<string | null>(null), serial = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
-  const requestBasis = (picks: GeneratorChoice[]) => JSON.stringify({ choices: picks, settings, profile, excludeConfirmed, selections: selections.map(s => s.section.id), locks });
+  const requestBasis = (picks: GeneratorChoice[]) => JSON.stringify({ draftRevision, choices: picks, settings, profile, excludeConfirmed, selections: selections.map(s => s.section.id), locks });
   const basis = requestBasis(choices);
   const sectionsByCourse = new Map(selections.map(item => [item.course.id, item.section]));
   const canRelease = (choice: GeneratorChoice) => {
@@ -141,7 +142,7 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
         {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} planning={planning} preflightConstraints={preflightConstraints} protectedIds={locks} loadingMore={pending === 'more'}
           canExplore={active && ready && pending !== 'initial'} pageError={pageError} onExplore={() => void generate(true)} emptyBatch={!!response.emptyBatch}
           allFixed={allFixed} onTryOtherSections={hasPins ? () => allowOtherSections(true) : undefined} onReviewSchedule={onReviewSchedule}
-          onApply={(schedule, rescueSectionId) => { onApply(schedule, choices.map(c => c.courseId), rescueSectionId); }} />}
+          onSave={onSave} onApply={(schedule, rescueSectionId) => { onApply(schedule, choices.map(c => c.courseId), rescueSectionId); }} />}
     </section>
     </div>
   </>;

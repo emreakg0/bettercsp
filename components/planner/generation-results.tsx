@@ -15,9 +15,10 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore, emptyBatch, allFixed, onTryOtherSections, onReviewSchedule }: {
+export function GenerationResults({ result, stale, onApply, onSave, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore, emptyBatch, allFixed, onTryOtherSections, onReviewSchedule }: {
   planning: PlanningContext; preflightConstraints: HardConstraints | null; protectedIds: string[];
   profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule, rescueSectionId?: string) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
+  onSave: (schedule: RankedSchedule) => void;
   emptyBatch: boolean; allFixed: boolean; onTryOtherSections?: () => void; onReviewSchedule: () => void;
 }) {
   const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
@@ -76,6 +77,7 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, p
       </article>)}
       {!!schedule.omittedCourses.length && <p>Optional courses omitted: {schedule.omittedCourses.join(', ')}.</p>}
       <div className="generation-actions"><button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
+        <button className="text-button" disabled={stale || !canApply} onClick={() => onSave(schedule)}>Save as new named schedule</button>
         <button className="button" disabled={stale || !canApply} onClick={() => onApply(schedule)}>Apply this schedule</button></div>
       {compared !== null && <div className="schedule-comparison"><h4>Compare with schedule {compared + 1}</h4>
         <table><thead><tr><th>Metric</th><th>Pinned #{compared + 1}</th><th>Current #{index + 1}</th></tr></thead><tbody>

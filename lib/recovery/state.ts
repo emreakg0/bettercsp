@@ -54,7 +54,7 @@ export function applyCourseFallback(draft: RescueDraft, targetId: string, replac
 export function registrationAfterChange(before: RescueDraft['selections'], after: RescueDraft['selections'], reports: RegistrationStatuses): RegistrationStatuses {
   const kept = new Set(after.map(s => s.section.id));
   const result = Object.fromEntries(Object.entries(reports).filter(([id, status]) => kept.has(id) || status === 'registered')) as RegistrationStatuses;
-  for (const item of after) if (!before.some(old => old.section.id === item.section.id)) result[item.section.id] = 'planned';
+  for (const item of after) if (!before.some(old => old.section.id === item.section.id)) result[item.section.id] = reports[item.section.id] ?? 'planned';
   if (Object.keys(result).length > 200) throw new Error('Too many registration reports. Verify and clear old reports before applying.');
   return result;
 }
