@@ -99,8 +99,9 @@ Closure and requested swaps offer replacement search. Known meeting overlaps sho
 times and offer a repair without selecting either section for mandatory replacement. Permission
 guidance offers an explicit alternative search. Prerequisite or placement concerns and unexplained
 WebReg rejections lead to verification with Rutgers. No search runs when the student selects an
-intake answer. The existing hard constraints and preferences also apply to Rescue. Academic facts
-remain session-only. Optional server availability checks are off by default.
+intake answer. The existing hard constraints and preferences also apply to Rescue. Rescue uses the
+existing eligibility fields from the optional academic profile. Planning-only fields stay in the
+browser. Optional server availability checks are off by default.
 
 Alternatives lead with their goal, changed sections, preserved count, and remaining verification,
 followed by before/after tables and a calendar preview. Disclosures retain comparison, readiness,

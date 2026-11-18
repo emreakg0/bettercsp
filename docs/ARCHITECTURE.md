@@ -328,10 +328,10 @@ school/major rules, honors admission, or placement. Missing facts are never nega
 Delivery H remains hybrid; Math honors admission uses verified departmental policy and section
 identity/designation evidence. Unknown honors-program code meanings stay explicit.
 
-The planner owns a session-only optional profile; academic information is never added to the
-versioned local draft save. `academic-profile.tsx` validates optional codes/facts on explicit update,
-and `registration-readiness.tsx` renders the same independent evaluator for manual and generated
-selections. Actionable permission/mismatch findings are prioritized; source details are disclosed
+The planner projects the optional academic planning profile into the existing eligibility contract.
+Academic information stays outside the versioned local draft save. The profile form validates
+optional facts on explicit update. `registration-readiness.tsx` uses the same evaluator for manual
+and generated selections. Actionable permission/mismatch findings are prioritized; source details are disclosed
 progressively. Source links point to Rutgers instructions or the semester/campus SOC snapshot API.
 
 `GenerationRequest.eligibility` is optional, preserving Phase 3 requests. The parser validates it;
@@ -371,7 +371,7 @@ sections/locks/reports together only when the post-apply signature is unchanged.
 cannot be applied. Ordinary generation/manual replacement also respect registered protection.
 
 Version 1 local saves gain optional validated `registrationStatuses` (up to 200 scoped reports);
-older saves still load. Academic profile data remains session-only. Generator settings are now
+older saves still load. Academic profile storage is separate and opt-in. Generator settings are
 workspace-owned and shared with Rescue; neither preferences nor reports trigger autonomous requests.
 
 Algorithm, availability evidence, performance, approval/undo guarantees, and unresolved rules are
@@ -408,7 +408,8 @@ and textual conflict/restriction explanations; never rely on color alone. Preser
 | Preferences | Proposed client state and versioned save |
 | Saved schedules | Implemented versioned localStorage draft; export/import and revision checks proposed |
 | Availability | Current development snapshot; separate refresh and freshness metadata proposed |
-| Eligibility | Source warnings implemented; rules and student-context evaluation proposed |
+| Academic planning profile | Optional versioned browser storage, reusable across semester and campus drafts |
+| Eligibility | Existing request contract projected from the active academic profile |
 Implemented browser saves use `bettercsp:planner:v1:<year-term-campus>` and store only version,
 source ID, section IDs, optional locked section IDs, and scoped self-reported registration statuses. On hydration, saved data is validated and
 resolved through the catalog endpoint before editing or saving is enabled, preventing an empty initial render from overwriting
@@ -417,6 +418,37 @@ Read/restore failures retain the previous save and offer retry or an explicit ne
 write failures keep the draft in memory with a warning. Saves do not sync across devices and can
 be cleared by browser settings. Concurrent tabs are last-writer-wins; there is no revision merging.
 Export/import, multiple named schedules, and cross-device saves remain proposed.
+
+### Academic planning profile
+
+The profile lives in the browser under `bettercsp:academic-profile:v1`. Updating applies information
+in the current tab. Checking Remember and updating opts into storage, and a later update with
+Remember unchecked removes the stored copy. Clear resets both the form and the saved profile.
+Blocked or invalid storage leaves generation and Rescue available. The academic key is independent
+of the selected term and campus. Student-reported permission indexes are scoped to the term and
+campus where they were entered. Saved schedules and their registration reports still use their
+existing storage keys and schema.
+
+`lib/academic/profile.ts` validates the versioned record and reuses the existing eligibility parser.
+Planning names for school, major and minor, intended degree, catalog year, current and planned
+course lists, and equivalent-credit entries stay in the browser. Only the existing eligibility
+fields, including explicitly reported completed courses, are projected into generation and Rescue
+requests. Entries marked Rutgers accepted are still student reports that credit was recorded.
+They remain separate from unverified credit, completed courses, and requirement matches. The
+profile contains no account identifiers, academic documents, grades, or permission numbers.
+
+`lib/academic/requirements.ts` defines future sourced, catalog-year-specific program rules.
+[SAS Core guidance](https://sasundergrad.rutgers.edu/majors-and-core-curriculum/core) describes
+certified learning goals separately from major progress. [Rutgers academic credit guidance](https://catalogs.rutgers.edu/generated/nb-ug_current/pg687.html)
+distinguishes awarded credit from where it may apply, and the
+[Computer Science B.A. requirements](https://www.cs.rutgers.edu/academics/undergraduate/cs-degrees/b-a-degree)
+illustrate program-specific elective pools and changes to course sequences. The interfaces model
+requirements, prerequisite expressions, equivalencies and cross-listings separately. A future
+recommendation feature needs verified rules for each program and catalog year, reviewed course
+relationships and requirement-specific exceptions, plus a matcher that can report unknowns.
+Students can check applicable requirements with
+[Degree Navigator and advising](https://sasundergrad.sas.rutgers.edu/advising/advising/degree-navigator).
+
 Begin without accounts or a database. Add authenticated durable storage only for justified cross-device
 requirements. Multi-instance shared caching is a later deployment decision; process memory is disposable.
 

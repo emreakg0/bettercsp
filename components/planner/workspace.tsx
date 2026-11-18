@@ -9,7 +9,7 @@ import { WeeklyCalendar } from './weekly-calendar';
 import { ScheduleGenerator, type GeneratorChoice } from './schedule-generator';
 import { AcademicProfile } from './academic-profile';
 import { RegistrationReadiness } from './registration-readiness';
-import { emptyProfile, type StudentProfile } from '@/lib/eligibility/types';
+import { eligibilityForSource, emptyAcademicProfile } from '@/lib/academic/profile';
 import { RescuePanel } from './rescue-panel';
 import type { RescueReason } from './rescue-intake';
 import { initialSettings, type GenerationSettings } from './generation-controls';
@@ -21,7 +21,8 @@ import type { RankedSchedule } from '@/lib/scheduling/generation-types';
 export function PlannerWorkspace({ sourceId, courses, children }: {
   sourceId: string; courses: PlannerCourse[]; children: ReactNode;
 }) {
-  const [profile, setProfile] = useState<StudentProfile>(structuredClone(emptyProfile));
+  const [academicProfile, setAcademicProfile] = useState(emptyAcademicProfile);
+  const profile = eligibilityForSource(academicProfile, sourceId);
   const [selections, setSelections] = useState<Selection[]>([]);
   const [locks, setLocks] = useState<string[]>([]);
   const [choices, setChoices] = useState<GeneratorChoice[]>([]);
@@ -233,7 +234,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       }
     />
     <div className="planner-secondary">
-      <details className="registration-settings"><summary>Registration settings · optional academic information</summary><AcademicProfile profile={profile} onChange={setProfile} /></details>
+      <AcademicProfile sourceId={sourceId} onChange={setAcademicProfile} />
     </div>
   </>;
 }

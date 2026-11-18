@@ -7,6 +7,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
 const origin = process.env.PLANNER_URL || 'http://localhost:3000';
 const key = 'bettercsp:planner:v1:2027-1-NB';
+const academicKey = 'bettercsp:academic-profile:v1';
 const catalog = normalizeCatalog(JSON.parse(readFileSync('data/rutgers/spring-2027.json', 'utf8')), { id: '2027-1-NB', label: 'Spring 2027', file: '', capturedAt: null });
 const calculus = catalog.find(c => c.code === '01:640:251');
 const cs = catalog.find(c => c.code === '01:198:112');
@@ -232,15 +233,66 @@ try {
   assert.ok(protectedThree.every(section => applied.sectionIds.includes(section.id) && applied.registrationStatuses[section.id] === 'registered'));
   await page.getByRole('button', { name: 'Undo applied repair', exact: true }).click();
   assert.equal(await page.locator('#selected-' + failed.index + ' .registration-report select').inputValue(), 'failed');
-  // Registration settings remain optional and accessible; changing them invalidates previews.
-  await page.locator('.registration-settings > summary').click();
-  await page.locator('.academic-profile > summary').click();
-  assert.equal(await page.getByRole('button', { name: 'Update readiness', exact: true }).isVisible(), true);
+  const academic = page.locator('.academic-profile');
+  await academic.locator(':scope > summary').click();
+  const remember = academic.getByLabel('Remember my academic profile on this browser');
+  const updateProfile = academic.getByRole('button', { name: 'Update profile', exact: true });
+  assert.equal(await remember.isChecked(), false);
+  await academic.getByLabel('Rutgers school', { exact: true }).fill('School of Arts and Sciences');
+  await academic.getByLabel('Declared or intended majors').fill('Computer Science');
+  await academic.getByLabel('Intended degree type').selectOption('BS');
+  await academic.getByLabel('Program or catalog year').fill('2026');
+  await academic.getByLabel('Completed courses', { exact: true }).fill('01:198:111');
+  await academic.getByLabel('Courses in progress').fill('01:198:112');
+  await academic.getByLabel('Planned future courses').fill('01:198:205');
+  await academic.getByText('AP, transfer, or equivalent credit', { exact: true }).click();
+  await academic.getByRole('button', { name: 'Add equivalent credit' }).click();
+  const firstCredit = academic.getByRole('group', { name: 'Credit 1' });
+  await firstCredit.getByLabel('Acceptance status').selectOption('rutgers-accepted');
+  await firstCredit.getByLabel('Equivalent Rutgers course code', { exact: false }).fill('01:640:151');
+  await academic.getByRole('button', { name: 'Add equivalent credit' }).click();
+  const otherCredit = academic.getByRole('group', { name: 'Credit 2' });
+  await otherCredit.getByLabel('Credit source').selectOption('transfer');
+  await otherCredit.getByLabel('Equivalent Rutgers course code', { exact: false }).fill('01:640:152');
+  await updateProfile.click();
+  await academic.getByRole('status').filter({ hasText: 'Profile updated for this tab.' }).waitFor();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), academicKey), null);
+  await remember.check();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), academicKey), null);
+  await updateProfile.click();
+  const stored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), academicKey);
+  assert.equal(stored.version, 1);
+  assert.deepEqual(stored.profile.equivalentCredits.map(credit => credit.status), ['rutgers-accepted', 'unverified']);
+  await page.reload();
+  await academic.locator(':scope > summary').click();
+  await academic.getByRole('status').filter({ hasText: 'Profile loaded from this browser.' }).waitFor();
+  assert.equal(await academic.getByLabel('Courses in progress').inputValue(), '01:198:112');
+  assert.equal(await academic.getByLabel('Intended degree type').inputValue(), 'BS');
+  assert.equal(await remember.isChecked(), true);
   await page.route('**/api/planner/generate', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Try again shortly.' }) }));
+  const nextRequest = page.waitForRequest(r => r.url().endsWith('/api/planner/generate') && r.method() === 'POST');
   await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
+  const payload = (await nextRequest).postDataJSON().eligibility.profile;
+  assert.deepEqual(payload.completedCourses, ['01:198:111']);
+  assert.equal(payload.equivalentCredits, undefined);
+  assert.equal(payload.inProgressCourses, undefined);
   await page.getByRole('alert').filter({ hasText: 'Try again shortly.' }).waitFor();
   assert.equal(await page.locator('.selected-section').count(), 4);
   await page.unroute('**/api/planner/generate');
+  await academic.getByLabel('Declared or intended majors').fill('Mathematics');
+  await updateProfile.click();
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).profile.intendedMajors, academicKey), ['Mathematics']);
+  await remember.uncheck();
+  await updateProfile.click();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), academicKey), null);
+  assert.equal(await academic.getByLabel('Declared or intended majors').inputValue(), 'Mathematics');
+  await remember.check();
+  await updateProfile.click();
+  const scheduleBeforeClear = await page.evaluate(key => localStorage.getItem(key), key);
+  await academic.getByRole('button', { name: 'Clear academic profile' }).click();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), academicKey), null);
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), key), scheduleBeforeClear);
+  assert.equal(await academic.getByLabel('Declared or intended majors').inputValue(), '');
   const honors = calculus.sections.find(s => s.index === '15919');
   await seed(page, [honors]);
   const blocker = page.locator('.saved-schedule .readiness-permission-required[open]');
@@ -310,5 +362,32 @@ try {
   assert.match(await blocks.last().innerText(), /Unverified site[\s\S]*Closed in snapshot/);
   await blocks.first().focus();
   assert.equal(await blocks.first().evaluate(el => getComputedStyle(el).outlineStyle), 'solid');
-  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, optional registration settings.');
+  for (const mode of ['corrupt', 'blocked']) {
+    const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    await context.addInitScript(({ key, mode }) => {
+      if (mode === 'corrupt') localStorage.setItem(key, '{"version":9}');
+      else {
+        for (const method of ['getItem', 'setItem', 'removeItem']) {
+          const original = Storage.prototype[method];
+          Storage.prototype[method] = function (name, ...args) {
+            if (name === key) throw new DOMException('Storage blocked', 'SecurityError');
+            return original.call(this, name, ...args);
+          };
+        }
+      }
+    }, { key: academicKey, mode });
+    const mobile = await context.newPage();
+    await mobile.goto(origin + '/planner');
+    const mobileProfile = mobile.locator('.academic-profile');
+    await mobileProfile.locator(':scope > summary').click();
+    const notice = mode === 'corrupt' ? 'The saved academic profile could not be read.' : 'Browser storage is unavailable.';
+    await mobileProfile.getByRole('status').filter({ hasText: notice }).waitFor();
+    await mobileProfile.getByLabel('Declared or intended majors').fill('Computer Science');
+    await mobileProfile.getByLabel('Remember my academic profile on this browser').check();
+    await mobileProfile.getByRole('button', { name: 'Update profile' }).click();
+    await mobileProfile.getByRole('status').filter({ hasText: mode === 'blocked' ? 'Profile updated for this tab.' : 'Profile updated and saved' }).waitFor();
+    assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await context.close();
+  }
+  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, opt-in academic profile persistence and privacy, reload, validation, storage failure, and clear.');
 } finally { await browser.close(); }

@@ -161,7 +161,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .selected-section > .text-button { margin-right: 16px; }
 .generator-choices label, .generation-checks label { min-height: 44px; }
 .academic-profile { margin-top: 24px; border-block: 1px solid var(--line); padding: 14px 0; }
-.academic-profile > summary { cursor: pointer; min-height: 44px; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.academic-profile summary { cursor: pointer; min-height: 44px; padding: 8px 0; font-size: 13px; font-weight: 600; }
 .academic-profile label { font-size: 12px; }.academic-profile input, .academic-profile select { margin-top: 6px; }
 .academic-checkbox { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; margin: 12px 0; }
 .academic-checkbox input { width: 18px; min-height: 18px; flex-shrink: 0; accent-color: var(--accent); }
@@ -187,7 +187,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .planner-source-note { font-size: 12px; margin-block: 12px; }
 .course-choice-heading { display: flex; gap: 16px; justify-content: space-between; align-items: center; }
 .course-choice-heading .button { flex-shrink: 0; }
-.planner-course > details > summary, .generator-choices summary, .registration-settings > summary { min-height: 44px; padding: 10px 0; font-size: 12px; }
+.planner-course > details > summary, .generator-choices summary { min-height: 44px; padding: 10px 0; font-size: 12px; }
 .generator-choices small { display: block; color: var(--muted); margin-top: 4px; }
 .generator-choices details { max-width: 100%; }
 .generator-choices details label { display: flex; }
@@ -197,8 +197,6 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .planner-workspace .schedule-generator { margin-top: 18px; }
 .planner-workspace .generation-results { margin-top: 0; }
 .planner-secondary { margin-top: 24px; }
-.registration-settings { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 8px; }
-.registration-settings .academic-profile { border: 0; margin-top: 0; }
 .saved-schedule .results-heading { flex-wrap: wrap; }
 .eligibility-settings { font-size: 12px; margin-block: 16px; }
 @media (min-width: 1001px) { .schedule-view-tabs { position: sticky; top: 0; background: var(--background); z-index: 3; padding-block: 8px; } }

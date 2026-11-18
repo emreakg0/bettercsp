@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test lib/catalog/*.test.ts lib/scheduling/*.test.ts lib/eligibility/*.test.ts lib/recovery/*.test.ts"
+    "test": "node --test lib/catalog/*.test.ts lib/scheduling/*.test.ts lib/eligibility/*.test.ts lib/academic/*.test.ts lib/recovery/*.test.ts"
   },
   "dependencies": {
     "next": "16.2.4",
