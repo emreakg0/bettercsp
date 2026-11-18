@@ -5,7 +5,10 @@ import type { Section } from '@/lib/catalog/types';
 function fieldLabel(field: string): string {
   return field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
 }
-export function SectionList({ sections, renderAction }: { sections: Omit<Section, 'raw'>[]; renderAction?: (section: Omit<Section, 'raw'>) => ReactNode }) {
+function SectionWarning({ text }: { text: string }) {
+  return text ? <span className="section-preflight-warning">{text}</span> : null;
+}
+export function SectionList({ sections, renderAction, warning }: { sections: Omit<Section, 'raw'>[]; renderAction?: (section: Omit<Section, 'raw'>) => ReactNode; warning?: (section: Omit<Section, 'raw'>) => string }) {
   return <div className="sections">{sections.map(section => (
     <details className="section" key={section.id}>
       <summary>
@@ -13,6 +16,7 @@ export function SectionList({ sections, renderAction }: { sections: Omit<Section
         <span className="section-instructor">{section.honors && <strong className="honors-label">{section.honors.kind === 'designated' ? 'Honors section' : 'Honors program information'} · </strong>}{section.instructors.join(', ') || 'Instructor not listed'}</span>
         <span className={`badge ${section.availability}`}>{section.availability === 'unknown' ? 'Status unknown' : `${section.availability} in snapshot`}</span>
         <span className="expand" aria-hidden="true">+</span>
+        {warning && <SectionWarning text={warning(section)} />}
       </summary>
       <div className="section-body">
         <p className="muted"><strong>Delivery format: </strong>{section.delivery.label}</p>

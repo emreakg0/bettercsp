@@ -1,14 +1,16 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { StudentProfile } from '@/lib/eligibility/types';
-import type { GenerationResult, RankedSchedule } from '@/lib/scheduling/generation-types';
+import type { PlanningContext } from '@/lib/eligibility/preflight';
+import type { GenerationResult, HardConstraints, RankedSchedule } from '@/lib/scheduling/generation-types';
 import { excludedIndexIds, type Selection } from '@/lib/scheduling/selection';
 import { GenerationControls, type GenerationSettings } from './generation-controls';
 import { GenerationResults } from './generation-results';
 
 export interface GeneratorChoice { courseId: string; code: string; title: string; required: boolean; campuses: string[]; keepSection?: boolean }
 // New orchestration is limited to generation requests; manual persistence remains workspace-owned.
-export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, ready, onApply, profile, settings, onSettingsChange, picker, manualSchedule, view, scheduleView, onViewChange, onScheduleViewChange, onRemoveCourse }: {
+export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, ready, onApply, profile, planning, preflightConstraints, onRescue, settings, onSettingsChange, picker, manualSchedule, view, scheduleView, onViewChange, onScheduleViewChange, onRemoveCourse }: {
+  planning: PlanningContext; preflightConstraints: HardConstraints | null; onRescue: (sectionId: string) => void;
   picker: ReactNode; manualSchedule: ReactNode; view: 'courses' | 'calendar'; scheduleView: 'results' | 'saved';
   onViewChange: (view: 'courses' | 'calendar') => void; onScheduleViewChange: (view: 'results' | 'saved') => void; onRemoveCourse: (courseId: string) => void;
   settings: GenerationSettings; onSettingsChange: (settings: GenerationSettings) => void; profile: StudentProfile; sourceId: string; choices: GeneratorChoice[]; onChoicesChange: (choices: GeneratorChoice[]) => void;
@@ -115,9 +117,15 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
 
         {pending === 'initial' && <p role="status" className="muted">Finding schedules for your courses… Your saved schedule is unchanged.</p>}
         {!response && !pending && <div className="schedule-status"><h2>Schedule preview</h2><p>Add your courses, then choose “Generate schedules” to compare possible weeks. Your saved schedule will stay unchanged until you apply a result.</p></div>}
-        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} loadingMore={pending === 'more'}
+        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} planning={planning} preflightConstraints={preflightConstraints} protectedIds={locks} loadingMore={pending === 'more'}
           canExplore={ready && pending !== 'initial'} pageError={pageError} onExplore={() => void generate(true)}
-          onApply={schedule => { if (onApply(schedule, choices.map(c => c.courseId))) { setApplied(true); onScheduleViewChange('saved'); } }} />}
+          onApply={(schedule, rescueSectionId) => {
+            if (onApply(schedule, choices.map(c => c.courseId))) {
+              setApplied(true);
+              onScheduleViewChange('saved');
+              if (rescueSectionId) onRescue(rescueSectionId);
+            }
+          }} />}
       </div>
       <div hidden={scheduleView !== 'saved'}>{applied && <p role="status">Applied to your saved schedule.</p>}{manualSchedule}</div>
     </section>

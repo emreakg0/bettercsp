@@ -16,7 +16,7 @@ export function standingFinding(section: EligibilitySection, profile: StudentPro
   if (!text) return null;
   const allowed = Object.hasOwn(standings, text) ? standings[text] : null;
   const incompatible = !!allowed && profile.standing !== 'unknown' && !allowed.includes(profile.standing);
-  return { rule: 'soc.standing.exact.v1', category: 'standing', status: incompatible ? 'potentially-ineligible' : allowed && profile.standing !== 'unknown' ? 'no-known-blocker' : 'verification-needed',
+  return { rule: 'soc.standing.exact.v1', scope: 'section', supported: !!allowed, category: 'standing', status: incompatible ? 'potentially-ineligible' : allowed && profile.standing !== 'unknown' ? 'no-known-blocker' : 'verification-needed',
     excludable: incompatible, message: `Class-standing restriction: ${text}.`, missing: profile.standing === 'unknown' ? ['Rutgers class standing'] : [],
     nextStep: incompatible ? 'Choose a section for your standing, or ask the department to confirm an exception.' : allowed ? 'Confirm your standing in Rutgers records before registration.' : 'Ask the department to interpret this standing requirement.',
     evidence: [sourceEvidence(section, 'sectionEligibility', text)] };
@@ -34,7 +34,7 @@ export function declarationFinding(section: EligibilitySection, profile: Student
   const matches = supported && codes.some(code => supplied.includes(code));
   const known = matches || (supported && profile.declarationsComplete && (category !== 'UNIT' || supplied.length > 0));
   const incompatible = known && !matches;
-  return { rule: 'soc.open-to.single-category.v1', category: 'school-major', excludable: incompatible,
+  return { rule: 'soc.open-to.single-category.v1', scope: 'section', supported, category: 'school-major', excludable: incompatible,
     status: incompatible ? 'potentially-ineligible' : known ? 'no-known-blocker' : 'verification-needed',
     message: `Enrollment restriction: ${notice.text}.`, missing: supported && !known ? ['Complete applicable school/major/minor declarations (optional)'] : [],
     nextStep: supported ? 'Check that your declaration is recorded by Rutgers; otherwise choose an unrestricted section or contact the department.' : 'Ask the department how these combined restrictions apply; code combinations are not interpreted automatically.',
@@ -52,7 +52,7 @@ export function prerequisiteFinding(course: EligibilityCourse, section: Eligibil
   const alternative = /\bOR\b/i.test(compact);
   const met = parsed && (alternative ? codes.some(has) : codes.every(has));
   const reportedMissing = parsed && (alternative ? codes.every(not) : codes.some(not));
-  return { rule: 'soc.prerequisites.flat.v1', category: 'prerequisite', excludable: false,
+  return { rule: 'soc.prerequisites.flat.v1', scope: 'course', supported: parsed, category: 'prerequisite', excludable: false,
     status: met ? 'no-known-blocker' : reportedMissing ? 'potentially-ineligible' : 'verification-needed',
     message: met ? 'Reported course completions match the supported prerequisite expression.' : reportedMissing ? 'You explicitly reported not completing a listed prerequisite route.' : 'Prerequisite completion or the rule interpretation needs verification.',
     missing: !met && !reportedMissing ? ['Relevant completed courses, accepted placement/equivalency, required grades, or override'] : [],

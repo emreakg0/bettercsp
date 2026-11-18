@@ -68,6 +68,12 @@ try {
     assert.equal(await page.getByText(/search steps\./).isVisible(), false);
     assert.equal(await page.locator('.generation-results .week-calendar').isVisible(), true);
     assert.equal(await page.locator('.generation-results .calendar-legend li').count(), 10);
+    const previewPreflight = page.locator('.generation-results .registration-preflight');
+    await previewPreflight.locator('summary').first().press('Enter');
+    await previewPreflight.getByText(/Current availability and enrollment must be confirmed/).waitFor();
+    assert.ok(await previewPreflight.getByRole('heading', { name: /Index/ }).count());
+    await previewPreflight.locator('summary').first().press('Enter');
+
     await page.getByRole('button', { name: 'Pin this schedule for comparison' }).click();
     await page.getByRole('button', { name: 'Next schedule →' }).click();
     assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
@@ -169,6 +175,7 @@ try {
   await page.goto(`${origin}/planner`);
   const course = await search(page, '01:640:251', '01:640:251');
   await course.getByText('Choose a specific section', { exact: true }).click();
+  assert.ok(await course.locator('details.section > summary').filter({ hasText: 'Index 15919' }).getByText(/Honors admission requirement/).isVisible());
   await course.locator('.section > summary').first().click();
   await course.getByRole('button', { name: `Choose section ${calculus.sections[0].number}`, exact: true }).click();
   assert.equal(await page.locator('.selected-section').count(), 1);
@@ -295,13 +302,26 @@ try {
   assert.equal(await academic.getByLabel('Declared or intended majors').inputValue(), '');
   const honors = calculus.sections.find(s => s.index === '15919');
   await seed(page, [honors]);
-  const blocker = page.locator('.saved-schedule .readiness-permission-required[open]');
-  assert.equal(await blocker.count(), 1);
-  assert.match(await blocker.getByRole('link', { name: 'Rutgers permission instructions' }).getAttribute('href'), /math.sas.rutgers.edu/);
-  const routine = page.locator('.saved-schedule details').filter({ has: page.getByText(/^Needs verification ·/) });
-  assert.equal(await routine.locator(':scope > summary').filter({ hasText: 'Needs verification' }).count(), 1);
-  assert.equal(await routine.filter({ has: page.getByText(/^Confirm prerequisites, placement/) }).locator(':scope > p').first().isVisible(), false);
-  await page.getByRole('button', { name: `Review recovery options for ${calculus.code}`, exact: true }).click();
+  await page.getByRole('button', { name: 'Check registration readiness', exact: true }).click();
+  const preflight = page.locator('#saved-preflight');
+  await preflight.getByRole('heading', { name: /Index 15919/ }).waitFor();
+  assert.match(await preflight.getByRole('link', { name: 'Rutgers guidance' }).first().getAttribute('href'), /math.sas.rutgers.edu/);
+  await preflight.getByText('Switching sections does not resolve it by itself.', { exact: false }).waitFor();
+  await academic.locator(':scope > summary').click();
+  await academic.getByLabel('Courses in progress').fill('01:640:152');
+  await updateProfile.click();
+  await preflight.getByText('In progress in your profile: 01:640:152', { exact: false }).waitFor();
+  await academic.getByLabel('Completed courses', { exact: true }).fill('01:640:152');
+  await academic.getByLabel('Courses in progress').fill('');
+  await updateProfile.click();
+  await preflight.getByText('Reported completions match', { exact: false }).waitFor();
+  await preflight.getByText('Section restriction · Honors admission requirement', { exact: true }).waitFor();
+  const baselineBeforePreflight = await page.evaluate(key => localStorage.getItem(key), key);
+  await preflight.getByRole('button', { name: 'See alternate sections' }).click();
+  await preflight.getByRole('heading', { name: 'Other sections of 01:640:251' }).waitFor();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), key), baselineBeforePreflight);
+  await preflight.getByRole('button', { name: 'Review a repair in Registration Rescue' }).click();
+  assert.equal(await rescue.getByLabel('What went wrong with registration?').inputValue(), 'replace');
   const reason = rescue.getByLabel('What went wrong with registration?');
   await reason.selectOption('permission');
   assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.id);
@@ -314,6 +334,24 @@ try {
   await rescue.getByText('cannot verify the academic record', { exact: false }).waitFor();
   await rescue.getByText('Another section may have the same requirement.', { exact: false }).waitFor();
   assert.equal(await searchRescue.count(), 0);
+
+  await seed(page, [honors]);
+  await generate(page);
+  const generatedPreflight = page.locator('.generation-results .registration-preflight');
+  await generatedPreflight.locator('summary').first().click();
+  await generatedPreflight.getByRole('heading', { name: /Index 15919/ }).waitFor();
+  await generatedPreflight.getByRole('button', { name: 'Apply this preview and open Registration Rescue' }).click();
+  assert.equal(await rescue.getByLabel('What went wrong with registration?').inputValue(), 'replace');
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.id);
+  assert.equal(await rescue.getByRole('heading', { name: 'Proposed repairs' }).count(), 0);
+
+  await seed(page, [honors], { [honors.id]: 'registered' });
+  await page.getByRole('button', { name: 'Check registration readiness', exact: true }).click();
+  await preflight.getByText('This section is protected.', { exact: false }).waitFor();
+  assert.equal(await preflight.getByRole('button', { name: 'See alternate sections' }).count(), 0);
+  await page.setViewportSize({ width: 375, height: 812 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   const conflictMath = calculus.sections.find(s => s.index === '15897');
   const conflictCs = cs.sections.find(s => s.index === '14332');
@@ -389,5 +427,5 @@ try {
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await context.close();
   }
-  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, opt-in academic profile persistence and privacy, reload, validation, storage failure, and clear.');
+  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, section warnings, registration Preflight, alternate ranking and Rescue handoff, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, opt-in academic profile persistence and privacy, reload, validation, storage failure, and clear.');
 } finally { await browser.close(); }

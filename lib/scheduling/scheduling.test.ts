@@ -1,4 +1,4 @@
-import { calendarCampus } from '../../components/planner/calendar-campus.ts';
+import { calendarCampus } from '../catalog/calendar-campus.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

@@ -222,3 +222,11 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .rescue-field select { width: 100%; min-width: 0; font-weight: 400; }
 .rescue-panel > .button { margin-block: 12px; }
 .rescue-panel .schedule-status > p { margin: 4px 0 10px; }
+
+.registration-preflight { margin-block: 16px; padding: 12px 16px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; }
+.registration-preflight > summary { min-height: 40px; padding-block: 8px; color: var(--accent); font-weight: 650; }
+.preflight-section { border-top: 1px solid var(--line); padding-block: 12px; }
+.preflight-section p { margin: 4px 0; }
+.preflight-section summary { min-height: 40px; padding-block: 8px; }
+.preflight-alternatives { display: grid; justify-items: start; gap: 6px; }
+.section-preflight-warning { color: var(--accent); font-size: 12px; font-weight: 600; flex-basis: 100%; }

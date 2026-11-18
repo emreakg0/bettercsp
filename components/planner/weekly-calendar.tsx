@@ -1,4 +1,4 @@
-import { calendarCampus, calendarCampuses } from './calendar-campus';
+import { calendarCampus, calendarCampuses } from '@/lib/catalog/calendar-campus';
 import { formatDay, formatTime, isScheduled, weekDays } from '@/lib/scheduling/meetings';
 import type { Selection } from '@/lib/scheduling/selection';
 

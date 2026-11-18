@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { findConflicts, formatDay, formatTime, needsTimingVerification } from '@/lib/scheduling/meetings';
-import { readSavedIds, readSavedLocks, selectedCreditsLabel, applyGenerated, selectSection, storageKey, type PlannerCourse, type Selection } from '@/lib/scheduling/selection';
+import { readSavedIds, readSavedLocks, selectedCreditsLabel, excludedIndexIds, applyGenerated, selectSection, storageKey, type PlannerCourse, type Selection } from '@/lib/scheduling/selection';
 import { WeeklyCalendar } from './weekly-calendar';
 import { ScheduleGenerator, type GeneratorChoice } from './schedule-generator';
 import { AcademicProfile } from './academic-profile';
-import { RegistrationReadiness } from './registration-readiness';
+import { RegistrationPreflight } from './registration-preflight';
+import { sectionWarning } from '@/lib/eligibility/preflight';
 import { eligibilityForSource, emptyAcademicProfile } from '@/lib/academic/profile';
 import { RescuePanel } from './rescue-panel';
 import type { RescueReason } from './rescue-intake';
@@ -90,6 +91,21 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const effectiveLocks = protectedSections(draft);
   const priorRegistered = Object.entries(statuses).filter(([id, status]) => status === 'registered' && !selections.some(s => s.section.id === id));
   const canGenerate = ready && !missing.length && !priorRegistered.length;
+  const preflightConstraints = (() => {
+    try { return { ...settings.hard, excludedSectionIds: excludedIndexIds(settings.excludedIndexes, sourceId) }; }
+    catch { return null; }
+  })();
+  function openPreflight(): void {
+    setView('calendar');
+    setScheduleView('saved');
+    requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLDetailsElement>('#saved-preflight');
+      if (!panel) return;
+      panel.open = true;
+      panel.querySelector<HTMLElement>('summary')?.focus();
+      panel.scrollIntoView({ block: 'start' });
+    });
+  }
   function openRescue(sectionId?: string, reason?: RescueReason): void {
     if (sectionId) setRescueEntry(current => ({ key: current.key + 1, sectionId, reason }));
     requestAnimationFrame(() => {
@@ -153,6 +169,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
     <RescuePanel key={rescueEntry.key} sourceId={sourceId} draft={draft} profile={profile} settings={settings} ready={canGenerate}
       initialSectionId={rescueEntry.sectionId} initialReason={rescueEntry.reason} onFindCourse={findRescueCourse}
       onReviewSchedule={reviewRescueSchedule} onApply={acceptRepair} />
+    <div className="generation-actions"><button className="button" onClick={openPreflight}>Check registration readiness</button></div>
     {showGuide && <aside className="schedule-status" aria-label="Planner quick start">
       <strong>Start with a few courses.</strong>
       <p>Find courses and choose “Add course”. Set preferences if you want, then generate schedules. Compare the calendars and apply your preferred result. Use “Choose a specific section” for manual planning.</p>
@@ -168,7 +185,8 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
     </div>}
     {applyError && <p className="snapshot-note" role="alert">{applyError}</p>}
     <ScheduleGenerator sourceId={sourceId} choices={choices} onChoicesChange={setChoices} selections={selections} locks={effectiveLocks}
-      ready={canGenerate} onApply={apply} profile={profile} settings={settings} onSettingsChange={setSettings}
+      ready={canGenerate} onApply={apply} profile={profile} planning={academicProfile}
+      preflightConstraints={preflightConstraints} onRescue={sectionId => openRescue(sectionId, 'replace')} settings={settings} onSettingsChange={setSettings}
       view={view} scheduleView={scheduleView} onViewChange={setView} onScheduleViewChange={setScheduleView} onRemoveCourse={removeCourse}
       picker={<>
         {children}
@@ -181,7 +199,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
           <Link className="back-link" href={`/courses/${encodeURIComponent(course.id)}`}>Full course details ↗</Link>
           {course.prerequisites && <p className="course-note"><strong>Prerequisites · </strong>{course.prerequisites}</p>}
           {!!course.notes.length && <details className="course-notes"><summary>Course & department notes</summary><dl>{course.notes.map(note => <div key={note.field}><dt>{note.field}</dt><dd>{note.text}</dd></div>)}</dl></details>}
-          <SectionList sections={course.sections} renderAction={section => {
+          <SectionList sections={course.sections} warning={section => sectionWarning(course, section, profile)} renderAction={section => {
             const selected = selections.find(s => s.course.id === course.id);
             return <button className="button" disabled={!ready || selected?.section.id === section.id || (!!selected && effectiveLocks.includes(selected.section.id)) || (!selected && selections.length + missing.length >= 100)}
               onClick={() => add(course, section)}>{selected?.section.id === section.id ? 'Selected' : selected ? `Replace with section ${section.number}` : `Choose section ${section.number}`}</button>;
@@ -212,8 +230,10 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
           {!!arranged.length && <p>Hours by arrangement: {arranged.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. Coordinate meetings with the instructor after registration; overlaps cannot be checked until times are known.</p>}
           {!!unresolved.length && <p>Timing needs verification: {unresolved.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. These meetings cannot be checked or placed on the calendar. Confirm with Rutgers.</p>}
         </div>
+        <RegistrationPreflight id="saved-preflight" selections={selections} profile={profile} planning={academicProfile}
+          protectedIds={effectiveLocks} constraints={preflightConstraints} unresolved={missing.length} stale={!ready}
+          onRescue={canGenerate ? sectionId => openRescue(sectionId, 'replace') : undefined} />
         <WeeklyCalendar selections={selections} />
-        <RegistrationReadiness selections={selections} profile={profile} onRescue={sectionId => openRescue(sectionId)} />
         <div className="results-heading"><h2>Selected sections</h2></div>
         {!selections.length && <p className="muted">Add a section from course search, or apply a generated schedule. Your selected sections and registration reports will appear here.</p>}
         {selections.map(({ course, section }) => <article className="selected-section" key={section.id} id={`selected-${section.index}`}>

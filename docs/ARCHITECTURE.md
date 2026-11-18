@@ -343,6 +343,14 @@ The engine returns assessments with retained schedules and bounded examples of f
 Profile/policy changes join the preview basis signature and disable Apply until regeneration.
 Timetable hard filters, eligibility decisions, ranking scores, and snapshot seats remain separate.
 
+Registration Preflight runs in the browser for the actual selected indexes and uses the existing
+eligibility evaluator with local planning context. It distinguishes course-level and section-level
+evidence, weekly overlaps, published Spring 2027 New Brunswick travel minimums, and snapshot seat
+status. The course query on the sections route returns normalized catalog section projections.
+Alternative ranking and protected-section handling stay in the client. No preflight profile is sent
+with this query. The existing Rescue flow receives the selected index through its replacement intake.
+See [Eligibility Rules](ELIGIBILITY_RULES.md) for scope and sources.
+
 ## 8. Registration Rescue Engine
 
 Implemented Phase 5 in `lib/recovery`: provenance-aware problem detection, scoped registration

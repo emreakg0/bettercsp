@@ -15,7 +15,8 @@ function permissionFindings(course: EligibilityCourse, section: EligibilitySecti
   const evidence = code ? [sourceEvidence(section, code.field, code.text), ...(description ? [sourceEvidence(section, description.field, description.text)] : [])] : [];
   if (mathHonors) evidence.push({ field: 'Math honors admission policy', text: 'Honors calculus normally requires invitation; other applicants request departmental honors permission.', url: sourceLinks.mathHonors });
   else evidence.push({ field: 'Department permission instructions', text: 'Request permission through the department; it is separate from prerequisites.', url: course.code.startsWith('01:198:') ? sourceLinks.csPermission : sourceLinks.registration });
-  return [{ rule: mathHonors ? 'math.honors-admission.v1' : 'soc.add-permission.v1', category: mathHonors ? 'honors' : 'permission', excludable: false,
+  return [{ rule: mathHonors ? 'math.honors-admission.v1' : 'soc.add-permission.v1', scope: mathHonors && /:(291|292)$/.test(course.code) ? 'course' : 'section', supported: confirmedRule,
+    category: mathHonors ? 'honors' : 'permission', excludable: false,
     status: granted && confirmedRule ? 'no-known-blocker' : confirmedRule ? 'permission-required' : 'verification-needed',
     message: granted ? 'You report add permission for this registration index; other requirements are still evaluated separately.'
       : mathHonors ? 'Honors calculus admission normally requires an invitation or departmental honors permission. Membership alone does not approve entry.'
@@ -29,19 +30,20 @@ function honorsFinding(course: EligibilityCourse, section: EligibilitySection, p
   if (!section.honors && !note && !programs) return null;
   if (note) {
     const known = profile.honors === 'honors-college' || profile.honors === 'none', incompatible = profile.honors === 'none';
-    return { rule: 'soc.honors-college-only.v1', category: 'honors', excludable: incompatible,
+    return { rule: 'soc.honors-college-only.v1', scope: 'section', supported: true, category: 'honors', excludable: incompatible,
       status: incompatible ? 'potentially-ineligible' : known ? 'no-known-blocker' : 'verification-needed', message: note.text,
       missing: known ? [] : ['Honors College membership (optional)'], nextStep: 'Confirm membership recorded by Rutgers, or ask the department about an exception.',
       evidence: [sourceEvidence(section, note.field, note.text)] };
   }
   if (/^01:640:(151|152|251|252|244|291|292)$/.test(course.code) && !programs) return null;
-  return { rule: 'soc.honors-evidence.v1', category: 'honors', status: 'verification-needed', excludable: false,
+  return { rule: 'soc.honors-evidence.v1', scope: 'section', category: 'honors', status: 'verification-needed', excludable: false,
     message: programs ? 'Honors program codes are supplied, but their program mappings and combined requirements are unverified.' : 'An honors designation is supplied; the department must confirm its enrollment conditions.',
     missing: ['Applicable departmental honors approval or membership rules'], nextStep: 'Review the section notes with the department. Missing program codes do not mean unrestricted enrollment.',
     evidence: [sourceEvidence(section, programs?.field ?? 'honors designation', programs?.text ?? section.honors!.evidence)] };
 }
 function otherFindings(course: EligibilityCourse, section: EligibilitySection, profile: StudentProfile): EligibilityFinding[] {
-  const notes = [...course.notes, ...section.notices];
+  const notes = [...course.notes.map(note => ({ ...note, scope: 'course' as const })),
+    ...section.notices.map(note => ({ ...note, scope: 'section' as const }))];
   const findings: EligibilityFinding[] = [];
   const handled = new Set(['sectionEligibility', 'openToText', 'specialPermissionAddCode', 'specialPermissionAddCodeDescription', 'Honors program codes']);
   for (const note of notes) {
@@ -51,7 +53,7 @@ function otherFindings(course: EligibilityCourse, section: EligibilitySection, p
       || /eligib|permission|major|minor|honor|openTo/i.test(note.field);
     if (!relevant) continue;
     const met = placement && profile.placementMetFor.includes(course.code), notMet = placement && profile.placementNotMetFor.includes(course.code);
-    findings.push({ rule: placement ? 'soc.placement-note.v1' : 'soc.uninterpreted-restriction.v1', category: placement ? 'placement' : 'other', excludable: false,
+    findings.push({ rule: placement ? 'soc.placement-note.v1' : 'soc.uninterpreted-restriction.v1', scope: note.scope, category: placement ? 'placement' : 'other', excludable: false,
       status: 'verification-needed', message: placement ? `${met ? 'You report placement met' : notMet ? 'You report placement not met' : 'Placement information is needed'}: ${note.text}` : `Registration condition needs review: ${note.text}`,
       missing: placement && !met && !notMet ? ['Placement outcome applied by Rutgers for this course (optional)'] : [],
       nextStep: placement ? 'Confirm the required placement level and any alternative course-credit route with the department; this note is not a decoded placement rule.' : 'Ask the department how this source condition applies. Approval for another condition does not waive it.',

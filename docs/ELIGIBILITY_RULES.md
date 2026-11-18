@@ -52,10 +52,35 @@ or explicitly uncompleted courses, course-scoped applied-placement facts, and ap
 indexes. No sensitive identifier, credential, actual SPN, grades, or full academic record is required.
 Invalid/contradictory codes are rejected. Unknown extra API fields are not copied to the profile.
 
-Information is session-only and not written into local schedule saves. Manual readiness is computed
-locally; generation submits the optional facts for transient server computation. No student-profile
-store, authentication, transcript ingestion, or registration transaction was added. Clearing the
-profile or refreshing restores unknown academic facts while preserving saved sections and locks.
+The academic profile is session-only unless the student opts into separate browser-local storage.
+It is not written into schedule saves. Eligibility inputs can be sent with generation or Rescue.
+Planning-only facts, including in-progress and planned courses and equivalent credit, stay local.
+
+## Registration Preflight
+
+Preflight checks the actual indexes in saved and generated schedules. It reuses the eligibility
+evaluator and labels each finding by scope. Course prerequisites remain visible even when a student
+reports a matching completion. Intended majors are planning notes. In-progress classes and reported
+AP or transfer credit add context to prerequisite verification. Preflight does not infer completion,
+recognition, or conditional enrollment. Rutgers distinguishes prerequisite approval from section
+permission in its [prerequisite override form](https://alc.rutgers.edu/images/Forms/PREREQUISITE_OVERRIDE_FORM.pdf).
+No general conditional rule for in-progress prerequisites was established for the supported catalog.
+
+Section selection surfaces source-backed warnings for supported section-specific requirements.
+Preflight separates those requirements from known timetable overlaps and unverified snapshot seat
+status. For recognized physical New Brunswick campuses in Spring 2027, the
+[Registrar](https://nbregistrar.rutgers.edu/undergrad/s27prereg.htm) and
+[SAS travel guidance](https://sasundergrad.rutgers.edu/resources/faq/faq-detail/travel-conflict)
+support a 40-minute gap, with 30 minutes permitted for Busch/Livingston and College Avenue/Downtown.
+The check uses scheduled weekly meetings and known campus aliases. Meeting dates, unknown
+locations, and actual travel duration remain unverified. Travel is advisory and does not change
+the generation or Rescue solver.
+
+For an affected, unprotected index, Preflight can fetch same-course sections and rank those that
+fit around the other picks with fewer known blockers first. Uncertain eligibility is retained.
+The handoff opens Rescue with the index already selected and replacement intent set. A generated
+preview requires explicit application before it becomes the Rescue baseline. Rescue still requires
+explicit approval of a proposed repair.
 
 ## Remaining limits
 
@@ -63,5 +88,5 @@ Program-code mappings, complex major/minor/unit combinations, grade evaluation, 
 placement thresholds, departmental exceptions, prose co-requisites/duplicate-credit rules, and
 separate required-section matching are incomplete. Official rules and SOC data may change.
 Snapshot capture time remains unknown. Weekly conflicts, eligibility evidence, and seat availability
-are distinct; campus travel requirements, special dates, and exams are not certified by these checks.
-Registration Rescue and complete degree auditing remain unimplemented.
+are distinct. Preflight checks the published travel minimum where it has enough location and term
+evidence. Special dates, exams, and complete degree auditing remain outside these checks.

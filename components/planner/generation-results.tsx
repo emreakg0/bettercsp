@@ -1,9 +1,11 @@
-import { RegistrationReadiness, ReadinessFindings } from './registration-readiness';
+import { ReadinessFindings } from './registration-readiness';
 import type { StudentProfile } from '@/lib/eligibility/types';
 import { useState } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { formatTime } from '@/lib/scheduling/meetings';
-import type { GenerationResult, RankedSchedule } from '@/lib/scheduling/generation-types';
+import { RegistrationPreflight } from './registration-preflight';
+import type { PlanningContext } from '@/lib/eligibility/preflight';
+import type { GenerationResult, HardConstraints, RankedSchedule } from '@/lib/scheduling/generation-types';
 import { WeeklyCalendar } from './weekly-calendar';
 
 function Metrics({ schedule }: { schedule: RankedSchedule }) {
@@ -13,8 +15,9 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, canApply, profile, loadingMore, canExplore, pageError, onExplore }: {
-  profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
+export function GenerationResults({ result, stale, onApply, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore }: {
+  planning: PlanningContext; preflightConstraints: HardConstraints | null; protectedIds: string[];
+  profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule, rescueSectionId?: string) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
 }) {
   const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const index = Math.max(0, Math.min(requestedIndex, result.schedules.length - 1));
@@ -54,6 +57,10 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
           ? 'Search exhausted. All shortlisted schedules are loaded.'
           : 'All schedules found are loaded.'}</p>}
     {schedule && <>
+      <RegistrationPreflight key={schedule.id} selections={schedule.selections} profile={profile} planning={planning}
+        protectedIds={protectedIds} constraints={preflightConstraints} stale={stale}
+        onRescue={canApply && !stale ? sectionId => onApply(schedule, sectionId) : undefined}
+        rescueLabel="Apply this preview and open Registration Rescue" />
       <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
       <Metrics schedule={schedule} />
       {schedule.selections.map(selection => <article id={`generated-${selection.section.index}`} key={selection.section.id}>
@@ -62,7 +69,6 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
         <details><summary>Section details and registration notes</summary><SectionList sections={[selection.section]} /></details>
       </article>)}
       {!!schedule.omittedCourses.length && <p>Optional courses omitted: {schedule.omittedCourses.join(', ')}.</p>}
-      <RegistrationReadiness selections={schedule.selections} profile={profile} />
       <div className="generation-actions"><button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
         <button className="button" disabled={stale || !canApply} onClick={() => onApply(schedule)}>Apply this schedule</button></div>
       {compared !== null && <div className="schedule-comparison"><h4>Compare with schedule {compared + 1}</h4>

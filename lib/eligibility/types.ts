@@ -14,7 +14,7 @@ export const emptyProfile: StudentProfile = { schools: [], majors: [], minors: [
   placementMetFor: [], placementNotMetFor: [], grantedPermissionIndexes: [] };
 export interface Evidence { field: string; text: string; url: string }
 export interface EligibilityFinding {
-  rule: string; category: 'honors' | 'prerequisite' | 'permission' | 'standing' | 'school-major' | 'placement' | 'other';
+  rule: string; scope: 'course' | 'section'; supported?: boolean; category: 'honors' | 'prerequisite' | 'permission' | 'standing' | 'school-major' | 'placement' | 'other';
   status: EligibilityStatus; message: string; missing: string[]; nextStep: string;
   evidence: Evidence[]; excludable: boolean;
 }
