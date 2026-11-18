@@ -445,17 +445,14 @@ requests. Entries marked Rutgers accepted are still student reports that credit 
 They remain separate from unverified credit, completed courses, and requirement matches. The
 profile contains no account identifiers, academic documents, grades, or permission numbers.
 
-`lib/academic/requirements.ts` defines future sourced, catalog-year-specific program rules.
-[SAS Core guidance](https://sasundergrad.rutgers.edu/majors-and-core-curriculum/core) describes
-certified learning goals separately from major progress. [Rutgers academic credit guidance](https://catalogs.rutgers.edu/generated/nb-ug_current/pg687.html)
-distinguishes awarded credit from where it may apply, and the
-[Computer Science B.A. requirements](https://www.cs.rutgers.edu/academics/undergraduate/cs-degrees/b-a-degree)
-illustrate program-specific elective pools and changes to course sequences. The interfaces model
-requirements, prerequisite expressions, equivalencies and cross-listings separately. A future
-recommendation feature needs verified rules for each program and catalog year, reviewed course
-relationships and requirement-specific exceptions, plus a matcher that can report unknowns.
-Students can check applicable requirements with
-[Degree Navigator and advising](https://sasundergrad.sas.rutgers.edu/advising/advising/degree-navigator).
+`lib/academic/requirements.ts` defines catalog-year-specific program models. `rutgers-cs.ts` and
+`course-matches.ts` use the reported 2026–27 SAS Computer Science B.A. or B.S. program to identify
+degree-relevant alternatives for the Spring 2027 New Brunswick planner. Reported progress and
+course relationships stay separate from official requirement completion. The Rescue endpoint
+receives the derived shortlist of course codes alongside the existing Rescue inputs. The course
+fallback branch fixes every retained index and reuses the generation and Preflight travel checks.
+See [Registration Rescue](REGISTRATION_RESCUE.md#degree-aware-course-alternatives) for the
+evidence, transition limits, ranking, and apply behavior.
 
 Begin without accounts or a database. Add authenticated durable storage only for justified cross-device
 requirements. Multi-instance shared caching is a later deployment decision; process memory is disposable.

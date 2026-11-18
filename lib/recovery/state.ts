@@ -1,4 +1,7 @@
-import { applyGenerated, readSavedIds } from '../scheduling/selection.ts';
+import { applyGenerated, readSavedIds, type Selection } from '../scheduling/selection.ts';
+import { timetableIssues } from '../eligibility/preflight.ts';
+import { exclusionReason } from '../scheduling/candidates.ts';
+import { defaultConstraints, type HardConstraints } from '../scheduling/generation-types.ts';
 import { registrationLabels, type RegistrationStatuses, type RescueDraft, type Repair } from './types.ts';
 
 // Registration reports extend v1 local saves without changing legacy selected-ID/lock validation.
@@ -33,6 +36,20 @@ export function applyRepair(draft: RescueDraft, repair: Repair, basis: string, a
   const selections = applyGenerated(draft.selections, after, beforeCourses, protectedIds.filter(id => !approvedOverrides.includes(id)));
   const statuses = registrationAfterChange(draft.selections, selections, draft.statuses);
   return { selections, locks, statuses };
+}
+export function applyCourseFallback(draft: RescueDraft, targetId: string, replacement: Selection, basis: string, constraints: HardConstraints = defaultConstraints): RescueDraft {
+  if (basis !== draftSignature(draft)) throw new Error('Your schedule or registration reports changed. Search for course alternatives again.');
+  const target = draft.selections.find(selection => selection.section.id === targetId);
+  const kept = draft.selections.filter(selection => selection !== target);
+  if (!target || protectedSections(draft).includes(targetId)) throw new Error('A protected or missing section cannot be replaced with a course alternative.');
+  if (replacement.section.id === targetId || kept.some(item => item.course.code === replacement.course.code || item.section.id === replacement.section.id)) {
+    throw new Error('Choose a different section that is not already in your schedule.');
+  }
+  if (exclusionReason(replacement.section, constraints) || timetableIssues(replacement, [replacement, ...kept]).some(issue => issue.level !== 'verify')) {
+    throw new Error('Check the proposed meeting times and campus gaps before applying.');
+  }
+  const selections = applyGenerated(draft.selections, [replacement], [target.course.id], protectedSections(draft));
+  return { ...draft, selections, statuses: registrationAfterChange(draft.selections, selections, draft.statuses) };
 }
 export function registrationAfterChange(before: RescueDraft['selections'], after: RescueDraft['selections'], reports: RegistrationStatuses): RegistrationStatuses {
   const kept = new Set(after.map(s => s.section.id));

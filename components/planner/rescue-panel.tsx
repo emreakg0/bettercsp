@@ -1,21 +1,26 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { StudentProfile } from '@/lib/eligibility/types';
+import type { AcademicPlanningProfile } from '@/lib/academic/profile';
 import { snapshotEvidence } from '@/lib/availability/evidence';
 import { detectProblems } from '@/lib/recovery/problems';
 import { draftSignature, protectedSections } from '@/lib/recovery/state';
 import type { Repair, RescueDraft, RescueRequest, RescueResult } from '@/lib/recovery/types';
 import { findConflicts } from '@/lib/scheduling/meetings';
-import { excludedIndexIds } from '@/lib/scheduling/selection';
+import { excludedIndexIds, type Selection } from '@/lib/scheduling/selection';
 import type { GenerationSettings } from './generation-controls';
 import { RegistrationReadiness } from './registration-readiness';
 import { RescueGuidance, rescueReasons, type RescueReason } from './rescue-intake';
 import { RescueResults } from './rescue-results';
+import { RescueCourseFallbacks } from './rescue-course-fallbacks';
 
-export function RescuePanel({ sourceId, draft, profile, settings, ready, initialSectionId, initialReason, onFindCourse, onReviewSchedule, onApply }: {
+export function RescuePanel({ sourceId, draft, profile, academic, settings, ready, initialSectionId, initialReason, onFindCourse, onReviewSchedule, onApply, onApplyCourse, onPlanLater }: {
   sourceId: string; draft: RescueDraft; profile: StudentProfile; settings: GenerationSettings; ready: boolean;
+  academic: AcademicPlanningProfile;
   initialSectionId?: string; initialReason?: RescueReason; onFindCourse: () => void; onReviewSchedule: () => void;
   onApply: (repair: Repair, basis: string, overrides: string[]) => boolean;
+  onApplyCourse: (targetId: string, replacement: Selection, basis: string) => boolean;
+  onPlanLater: (code: string) => void;
 }) {
   const [reason, setReason] = useState<RescueReason | ''>(initialReason ?? '');
   const [sectionId, setSectionId] = useState(initialSectionId ?? '');
@@ -120,6 +125,8 @@ export function RescuePanel({ sourceId, draft, profile, settings, ready, initial
         {draft.selections.length > 12 && <p className="muted">Rescue can compare up to 12 selected sections.</p>}
         {!ready && <p className="muted">Resolve missing sections or earlier registered reports in your saved schedule before searching.</p>}
       </>}
+      {reason && affected && <RescueCourseFallbacks key={affected.section.id + reason} sourceId={sourceId} draft={draft} target={affected} academic={academic}
+        profile={profile} request={base} excludedIndexes={settings.excludedIndexes} ready={ready} onApply={onApplyCourse} onPlanLater={onPlanLater} />}
       <details><summary>Other known restrictions and source notes</summary>
         <RegistrationReadiness selections={affected ? [affected] : draft.selections} profile={profile} />
         <ul className="generation-notes">{detectProblems(draft, base, snapshotEvidence(sourceId))

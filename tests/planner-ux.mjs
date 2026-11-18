@@ -32,6 +32,8 @@ async function seed(page, selections, statuses = {}, locks = []) {
   await page.goto(origin);
   await page.evaluate(([key, ids, statuses, locks]) => localStorage.setItem(key, JSON.stringify({ version: 1, sourceId: '2027-1-NB', sectionIds: ids, registrationStatuses: statuses, lockedSectionIds: locks })), [key, selections.map(s => s.id), statuses, locks]);
   await page.goto(`${origin}/planner`);
+  const calendar = page.getByRole('button', { name: /^Calendar \(/ });
+  if (await calendar.isVisible()) await calendar.click();
   await page.locator(`#selected-${selections[0].index}`).waitFor();
 }
 try {
@@ -167,6 +169,64 @@ try {
         await page.unroute('**/api/planner/generate', handler);
       }
     }
+    const [failed, ...registered] = ['14315', '14411', '14758', '15897'].map(index => catalog.flatMap(c => c.sections).find(s => s.index === index));
+    await seed(page, [failed, ...registered], { [failed.id]: 'failed', ...Object.fromEntries(registered.map(s => [s.id, 'registered'])) }, [registered[0].id]);
+    await page.getByRole('button', { name: 'Get registration help for 01:198:112', exact: true }).click();
+    const fallback = page.getByRole('region', { name: 'Degree-aware Rescue' });
+    const findCourses = fallback.getByRole('button', { name: 'Find another course that advances my degree', exact: true });
+    assert.equal(await findCourses.count(), 0);
+    const academic = page.locator('.academic-profile');
+    await academic.locator(':scope > summary').click();
+    await academic.getByLabel('Rutgers school', { exact: true }).fill('SAS');
+    await academic.getByLabel('Declared or intended majors').fill('Computer Science');
+    await academic.getByLabel('Intended degree type').selectOption('BA');
+    await academic.getByLabel('Program or catalog year').fill('2026');
+    await academic.getByLabel('Courses in progress').fill('01:640:151');
+    const update = academic.getByRole('button', { name: 'Update profile' });
+    await update.click();
+    await fallback.getByText('Plan 01:198:112 for a later term', { exact: true }).press('Enter');
+    await fallback.getByText(/Postponing 01:198:112 could delay 01:198:211/).waitFor();
+    await fallback.getByRole('button', { name: 'Add 01:198:112 to planned future courses' }).click();
+    assert.equal(await academic.getByLabel('Planned future courses').inputValue(), '01:198:112');
+    await update.click();
+    async function findCoursesAndConfirmPrivacy() {
+      const search = page.waitForResponse(r => r.url().endsWith('/api/planner/rescue') && r.request().postDataJSON()?.courseFallback);
+      await findCourses.press('Enter');
+      const answer = await search;
+      assert.equal(answer.status(), 200);
+      const request = answer.request().postDataJSON();
+      for (const field of ['inProgressCourses', 'plannedCourses', 'intendedMajors', 'catalogYear']) assert.ok(!JSON.stringify(request).includes(field));
+      assert.equal(request.courseFallback.targetId, failed.id);
+      await fallback.getByRole('heading', { name: 'Different courses to consider', exact: true }).waitFor();
+    }
+    await findCoursesAndConfirmPrivacy();
+    const calculusII = fallback.locator('article').filter({ has: page.getByRole('heading', { name: /01:640:152/ }) });
+    await calculusII.locator('summary').filter({ hasText: 'Prerequisite needs verification' }).first().click();
+    await calculusII.getByText(/In progress in your profile: 01:640:151/).first().waitFor();
+    const review = fallback.locator('article').first().getByRole('button', { name: /^Review section/ }).first();
+    await review.press('Enter');
+    const applyAlternative = fallback.getByRole('button', { name: 'Apply approved course alternative' });
+    assert.equal(await applyAlternative.isDisabled(), true);
+    const approval = fallback.getByLabel('I approve this planner change', { exact: false });
+    await approval.check();
+    await academic.getByLabel('Program or catalog year').fill('2025');
+    await update.click();
+    await fallback.getByText(/Search again before applying an alternative/).waitFor();
+    assert.equal(await applyAlternative.count(), 0);
+    await academic.getByLabel('Program or catalog year').fill('2026');
+    await update.click();
+    await findCoursesAndConfirmPrivacy();
+    const selectedAlternative = (await review.textContent()).match(/index (\d{5})/)[1];
+    await review.press('Enter');
+    await approval.check();
+    await applyAlternative.click();
+    assert.equal(await page.locator(`#selected-${failed.index}`).count(), 0);
+    assert.equal(await page.locator(`#selected-${selectedAlternative} .registration-report select`).inputValue(), 'planned');
+    for (const section of registered) assert.equal(await page.locator(`#selected-${section.index} .registration-report select`).inputValue(), 'registered');
+    await page.getByRole('button', { name: 'Undo applied course alternative' }).click();
+    assert.equal(await page.locator(`#selected-${failed.index} .registration-report select`).inputValue(), 'failed');
+    assert.equal(await page.locator('.generator-choices').getByText('01:198:112', { exact: true }).count(), 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
     assert.equal(result.schedules[0].selections.length, 4);
     await context.close();
@@ -427,5 +487,5 @@ try {
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await context.close();
   }
-  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, section warnings, registration Preflight, alternate ranking and Rescue handoff, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, opt-in academic profile persistence and privacy, reload, validation, storage failure, and clear.');
+  console.log('PASS: desktop/mobile four-course workflow, discovery, previews, saved drafts, Preflight, guided Rescue, degree-aware alternatives, three protected registrations, profile invalidation, postponement, consent and undo, and academic profile persistence and privacy.');
 } finally { await browser.close(); }

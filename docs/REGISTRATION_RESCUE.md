@@ -144,6 +144,53 @@ unknown eligibility, missing/stale/unverified availability, cache timestamps/fai
 atomic approval/undo/stale protection, unrelated selections, and bounded large products. Existing
 Phase 1–4 tests remain part of `npm test`.
 
+## Degree-aware course alternatives
+
+The course alternative action supports the Spring 2027 New Brunswick planner for students who
+report School of Arts and Sciences, Computer Science B.A. or B.S., and the 2026–27 catalog
+(enter `2026`). The [2026–27 catalog Major Requirements tab](https://newbrunswick-26-27-undergrad.catalogs.rutgers.edu/pages/VSbgggHtgjolUCQloHSE#major-requirements1)
+lists the legacy CS111/112 sequence, CS205/206/211/344, and Math 151/152/250. The B.A. requires five
+designated electives and the B.S. seven, with at least two New Brunswick CS courses at the 300
+level or higher. Recommendations use a subset of the [department's designated CS electives](https://www.cs.rutgers.edu/academics/undergraduate/electives).
+The B.S. also requires a complete science sequence. This release recommends individual courses
+from Physics for the Sciences (193–194) or General Chemistry (161, 162, 171) only when consistent
+with the student's reported science work. The sources and review date (November 18, 2026) are
+recorded with the requirements in `lib/academic/rutgers-cs.ts`. [B.A. requirements](https://www.cs.rutgers.edu/academics/undergraduate/cs-degrees/b-a-degree),
+[B.S. requirements](https://www.cs.rutgers.edu/academics/undergraduate/cs-degrees/b-s-degree).
+
+The department pages now list CS121/122 and identify CS120 as preparation carrying SAS credit.
+The [transition notice](https://www.cs.rutgers.edu/academics/undergraduate/new-introductory-computer-science-course-sequence)
+distinguishes Spring 2027 transfers, Fall 2027-and-later transfers, AP CSA levels, and repeat
+enrollment after a D/F. Spring 2027 SOC still contains CS112 and uses legacy codes in prerequisites.
+BetterCSP can consider the exact CS112 course when the profile has legacy CS111 evidence and
+there is no new-sequence indication. A record of CS121 or CS122 cannot automatically substitute
+for CS111 or CS112. New-sequence course alternatives and individual transition mappings require
+department confirmation. CS120 is excluded from major alternatives.
+
+Completing a course is a self-reported match. In-progress courses, academic plans and reported
+Rutgers-accepted or uncertain credit remain separate. Courses with possible prior credit are
+held back to avoid repeat recommendations. Some [department-documented equivalents and duplicate-credit rules](https://www.cs.rutgers.edu/academics/undergraduate/advising)
+are used to avoid repeats. No automatic substitution, prerequisite waiver, or credit total is
+computed. Grade, residency, elective applicability and transfer conditions still need review.
+SOC and the eligibility evaluator provide registration warnings for exact indexes. Documented
+prerequisite routes highlight the effect of postponing a course. The student can add it to the
+profile's future list and use the usual Update profile action. The sole supported snapshot is
+Spring 2027, so no later semester or graduation date is predicted.
+
+The search shows another section of the original course first when one fits. It then ranks
+required courses before designated electives, favoring fewer registration concerns, documented
+routes into later requirements and the existing schedule-preference score. It fixes every other
+chosen index and explores at most 8,000 solver steps. It filters known travel conflicts for an
+incoming section with the Spring 2027 Preflight rule and warns about short campus gaps already
+present in retained classes. Snapshot seats and Rutgers eligibility remain distinct. The usual
+same-course Rescue search can also try changes to unlocked sections.
+
+Preview and approval are explicit. Course replacement can only alter the affected unprotected
+index and carries forward unrelated registration reports and locks. Undo restores the pre-change
+schedule and generator choices while the applied draft and its choices still match. No local
+schedule is modified on search. Only exact target identity and derived course codes are sent in
+addition to normal Rescue inputs. No new availability call is made for the course fallback.
+
 ## Unresolved Rutgers rules and non-goals
 
 The [data audit](RUTGERS_DATA_AUDIT.md) and [eligibility rules](ELIGIBILITY_RULES.md) remain authoritative

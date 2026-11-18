@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import {
   academicProfileKey, creditLimit, degreeTypes, eligibilityForSource, emptyAcademicProfile,
   parseAcademicProfile, readAcademicProfile, serializeAcademicProfile,
@@ -22,7 +22,9 @@ function commaList(value: FormDataEntryValue | null): string[] {
   return String(value ?? '').split(',').map(item => item.trim()).filter(Boolean);
 }
 
-export function AcademicProfile({ sourceId, onChange }: { sourceId: string; onChange: (profile: AcademicPlanningProfile) => void }) {
+export function AcademicProfile({ sourceId, onChange, ref }: {
+  sourceId: string; onChange: (profile: AcademicPlanningProfile) => void; ref?: Ref<{ planCourse: (code: string) => void }>;
+}) {
   const [profile, setProfile] = useState(emptyAcademicProfile);
   const [creditRows, setCreditRows] = useState<CreditRow[]>([]);
   const [remember, setRemember] = useState(false);
@@ -31,6 +33,19 @@ export function AcademicProfile({ sourceId, onChange }: { sourceId: string; onCh
   const [error, setError] = useState('');
   const [formVersion, setFormVersion] = useState(0);
   const nextCreditId = useRef(0);
+  const plannedInput = useRef<HTMLInputElement>(null);
+  useImperativeHandle(ref, () => ({
+    planCourse(code) {
+      const field = plannedInput.current;
+      if (!field || !ready) return;
+      const courses = commaList(field.value);
+      if (!courses.includes(code)) field.value = [...courses, code].join(', ');
+      field.closest('details')!.open = true;
+      setMessage(code + ' is in the future course field. Choose Update profile to keep it in your plan.');
+      setError('');
+      field.focus();
+    },
+  }), [ready]);
 
   useEffect(() => {
     let active = true;
@@ -122,7 +137,7 @@ export function AcademicProfile({ sourceId, onChange }: { sourceId: string; onCh
     }
   }
 
-  return <details className="academic-profile"><summary>Academic planning profile (optional)</summary>
+  return <details className="academic-profile" id="academic-planning-profile"><summary>Academic planning profile (optional)</summary>
     <p className="muted">Use the fields that help you plan. Schedule generation and Registration Rescue are available with an empty profile.</p>
     <form key={formVersion} onSubmit={submit} onChange={flagEdited} autoComplete="off">
       <div className="generation-fields">
@@ -138,7 +153,7 @@ export function AcademicProfile({ sourceId, onChange }: { sourceId: string; onCh
       <div className="generation-fields">
         {field('completedCourses')}
         <label>Courses in progress<input name="inProgressCourses" defaultValue={profile.inProgressCourses.join(', ')} maxLength={1800} placeholder="01:198:112" /></label>
-        <label>Planned future courses<input name="plannedCourses" defaultValue={profile.plannedCourses.join(', ')} maxLength={1800} placeholder="01:198:205" /></label>
+        <label>Planned future courses<input ref={plannedInput} name="plannedCourses" defaultValue={profile.plannedCourses.join(', ')} maxLength={1800} placeholder="01:198:205" /></label>
       </div>
       <details><summary>AP, transfer, or equivalent credit</summary>
         <p className="muted">Choose “Rutgers accepted” only for credit Rutgers has recorded. Leave the course code blank if the Rutgers equivalent is unknown. Keep estimated equivalents unverified. These entries do not count as course completions or confirm that a degree or registration requirement is met.</p>

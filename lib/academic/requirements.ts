@@ -1,4 +1,4 @@
-// Data contracts for a future sourced ruleset. The profile stores student reports separately.
+// Sourced program rules remain separate from student reports and registration eligibility.
 export interface RequirementSource { url: string; reviewedOn: string }
 export interface CourseDependency {
   courseCode: string;
@@ -13,12 +13,13 @@ export type CourseRule =
 
 export type DegreeRequirement = { id: string; title: string; source: RequirementSource } & (
   | CourseRule
-  | { kind: 'elective-pool'; count: number; eligibleCourses: readonly string[]; additionalRules?: readonly CourseRule[] }
+  | { kind: 'elective-pool'; count: number; eligibleCourses: readonly string[]; inDepartmentMinimum: number; upperLevelMinimum: number }
   | { kind: 'general-education'; category: string; count: number; eligibleCourses: readonly string[] }
 );
 export type CourseRelationship = { source: RequirementSource } & (
   | { kind: 'equivalent'; fromCourseCode: string; toCourseCode: string }
   | { kind: 'cross-listed'; courseCodes: readonly string[] }
+  | { kind: 'exclusive-credit'; courseCodes: readonly string[] }
 );
 export interface DegreeProgramRequirements {
   programId: string;

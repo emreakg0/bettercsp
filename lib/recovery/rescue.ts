@@ -23,11 +23,15 @@ function repair(schedule: RankedSchedule, draft: RescueDraft, request: RescueReq
     requiresReview: availability.state !== 'fresh' || schedule.eligibility.some(e => e.status !== 'no-known-blocker') };
 }
 // Recovery composes the Phase 3 solver; it never duplicates its feasibility or preference algorithms.
-export function rescueSchedule(catalog: Course[], request: RescueRequest, availability: AvailabilityEvidence, maximumSteps = 25000): RescueResult {
+export function resolveRescueDraft(catalog: Course[], request: RescueRequest): RescueDraft {
   const selections = catalog.flatMap(c => c.sections.filter(s => request.sectionIds.includes(s.id)).map(section => {
     const { sections, ...course } = plannerCourse(c); return { course, section: sections.find(s => s.id === section.id)! };
   }));
-  const draft: RescueDraft = { selections, statuses: request.statuses, locks: request.settings.constraints.lockedSectionIds };
+  return { selections, statuses: request.statuses, locks: request.settings.constraints.lockedSectionIds };
+}
+export function rescueSchedule(catalog: Course[], request: RescueRequest, availability: AvailabilityEvidence, maximumSteps = 25000): RescueResult {
+  const draft = resolveRescueDraft(catalog, request);
+  const { selections } = draft;
   const protectedIds = protectedSections(draft).filter(id => !request.overrideProtectionIds.includes(id));
   const problems = detectProblems(draft, request, availability);
   const result: RescueResult = { basis: draftSignature(draft), problems, protectedIds, repairs: [], availability, issues: [], visited: 0, truncated: false, changeBudget: null };

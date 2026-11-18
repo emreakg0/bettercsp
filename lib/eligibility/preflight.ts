@@ -99,7 +99,7 @@ function eligibilityIssue(finding: EligibilityFinding, planning: PlanningContext
     alternate: finding.scope === 'section' && (level === 'conflict' || level === 'action') };
 }
 
-function timetableIssues(selection: Selection, selections: Selection[]): PreflightIssue[] {
+export function timetableIssues(selection: Selection, selections: Selection[]): PreflightIssue[] {
   const { section } = selection;
   const issues: PreflightIssue[] = [];
   if (!section.meetings.length || section.meetings.some(needsTimingVerification)

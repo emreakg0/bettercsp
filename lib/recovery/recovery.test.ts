@@ -7,9 +7,10 @@ import { emptyProfile } from '../eligibility/types.ts';
 import { defaultConstraints, defaultWeights } from '../scheduling/generation-types.ts';
 import { plannerCourse } from '../scheduling/selection.ts';
 import { snapshotEvidence, createAvailabilityReader, parseOpenIndexes, reportedAvailability } from '../availability/evidence.ts';
-import { applyRepair, draftSignature, parseRegistrationStatuses, readSavedRegistration, undoRepair } from './state.ts';
+import { applyCourseFallback, applyRepair, draftSignature, parseRegistrationStatuses, readSavedRegistration, undoRepair } from './state.ts';
 import { rescueSchedule } from './rescue.ts';
-import { parseRescueRequest } from './request.ts';
+import { parseCourseFallback, parseRescueRequest } from './request.ts';
+import { findCourseFallbacks } from './course-fallback.ts';
 import type { RescueDraft, RescueRequest, AvailabilityEvidence } from './types.ts';
 
 const sourceId = '2027-1-NB';
@@ -28,6 +29,66 @@ function request(ids: string[]): RescueRequest { return { sectionIds: ids, statu
 function draft(courses: Course[], r: RescueRequest): RescueDraft {
   return { selections: courses.flatMap(c => { const { sections, ...info } = plannerCourse(c); return sections.filter(s => r.sectionIds.includes(s.id)).map(section => ({ course: info, section })); }), locks: r.settings.constraints.lockedSectionIds, statuses: r.statuses };
 }
+
+test('course alternatives check another real CS112 section first and retain three registered indexes', () => {
+  const target = cs.sections.find(s => s.availability === 'closed')!;
+  // Fix three fixture registrations around the real Data Structures and Linear Algebra sections.
+  const kept = [course('01:355:101', [section('81001', [meeting('S')])]), course('01:750:193', [section('81002', [meeting('U')])]),
+    course('01:013:140', [section('81003', [meeting('F', 470, 500)])])];
+  const linear = catalog.find(c => c.code === '01:640:250')!;
+  const full = [cs, linear, ...kept];
+  const r = request([target.id, ...kept.map(c => c.sections[0].id)]);
+  r.statuses = Object.fromEntries(r.sectionIds.slice(1).map(id => [id, 'registered']));
+  r.statuses[target.id] = 'failed';
+  r.settings.constraints.lockedSectionIds = [kept[0].sections[0].id];
+  const result = findCourseFallbacks(full, r, target.id, [linear.code]);
+  assert.equal(result.options[0]?.selection.course.code, cs.code);
+  const alternative = result.options.find(option => option.selection.course.code === linear.code)!.selection;
+  const current = draft(full, r);
+  const sameCourse = rescueSchedule(full, { ...r, replaceSectionIds: [target.id] }, snapshot).repairs[0];
+  assert.ok(sameCourse);
+  const forged = { ...sameCourse, schedule: { ...sameCourse.schedule, selections: [...current.selections.slice(1), alternative] } };
+  assert.throws(() => applyRepair(current, forged, result.basis, []), /cannot silently remove/);
+  const applied = applyCourseFallback(current, target.id, alternative, result.basis);
+  for (const id of r.sectionIds.slice(1)) assert.equal(applied.statuses[id], 'registered');
+  assert.equal(applied.statuses[alternative.section.id], 'planned');
+  assert.deepEqual(applied.locks, current.locks);
+  assert.deepEqual(undoRepair(applied, current, draftSignature(applied)), current);
+  assert.throws(() => applyCourseFallback(applied, target.id, alternative, result.basis), /changed/);
+  r.statuses[target.id] = 'registered';
+  assert.match(findCourseFallbacks(full, r, target.id, [linear.code]).issue!, /protected/);
+  assert.throws(() => applyCourseFallback(current, kept[0].sections[0].id, alternative, draftSignature(current)), /protected/);
+});
+
+test('course fallback filters snapshot closures, overlap, short travel, hard constraints and permission', () => {
+  const bad = course('01:198:112', [section('82001', [meeting('M')], 'closed'), section('82002', [meeting('M', 560, 620)])]);
+  const kept = course('01:355:101', [section('82003', [meeting('M')])]);
+  const proposed = course('01:640:250', [section('82004', [{ ...meeting('M', 639, 690), campus: 'COLLEGE AVENUE' }]),
+    section('82005', [{ ...meeting('M', 640, 690), campus: 'COLLEGE AVENUE' }]), section('82006', [meeting('T', 1100, 1200)]),
+    section('82007', [meeting('W')], 'closed')]);
+  const r = request([bad.sections[0].id, kept.sections[0].id]);
+  r.settings.constraints.latestEnd = 1100;
+  const result = findCourseFallbacks([bad, kept, proposed], r, bad.sections[0].id, [proposed.code]);
+  assert.deepEqual(result.options.map(option => option.selection.section.index), ['82005']);
+  const noResult = findCourseFallbacks([bad, kept], r, bad.sections[0].id, [proposed.code]);
+  assert.deepEqual(noResult.options, []);
+  assert.equal(noResult.truncated, false);
+  const limited = findCourseFallbacks([bad, kept, proposed], r, bad.sections[0].id, [proposed.code], 1);
+  assert.ok(limited.truncated);
+  assert.ok(limited.visited <= 1);
+  const honors = calculus.sections.find(s => s.index === '15919')!;
+  assert.deepEqual(findCourseFallbacks([bad, kept, { ...calculus, sections: [{ ...honors, availability: 'open' }] }], r, bad.sections[0].id, [calculus.code]).options, []);
+});
+
+test('course fallback requests validate the term, candidates, target and absence of overrides', () => {
+  const r = request([`${sourceId}:82001`]);
+  const valid = { targetId: r.sectionIds[0], candidateCodes: ['01:198:205', '01:198:205'] };
+  assert.deepEqual(parseCourseFallback(valid, r, sourceId).candidateCodes, ['01:198:205']);
+  assert.throws(() => parseCourseFallback(valid, r, '2027-1-NK'), /unavailable/);
+  assert.throws(() => parseCourseFallback({ ...valid, targetId: `${sourceId}:82002` }, r, sourceId), /Invalid/);
+  assert.throws(() => parseCourseFallback({ ...valid, candidateCodes: ['01:198:122'] }, r, sourceId), /Invalid/);
+  assert.throws(() => parseCourseFallback(valid, { ...r, overrideProtectionIds: r.sectionIds }, sourceId), /unavailable/);
+});
 
 test('one snapshot-closed real Calculus section is replaced while registered Data Structures is preserved', () => {
   const chosenCs = cs.sections.find(s => s.availability === 'open')!; assert.ok(chosenCs);
