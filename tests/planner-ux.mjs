@@ -17,8 +17,13 @@ async function show(page, destination) {
   if (await tab.getAttribute('aria-current') !== 'page') await tab.click();
   await page.locator('.planner-tabs button[aria-current="page"]').filter({ hasText: destination }).waitFor();
 }
+async function editCourses(page) {
+  const edit = page.getByRole('button', { name: 'Edit courses', exact: true });
+  if (await edit.isVisible()) await edit.click();
+}
 async function search(page, query, code) {
   await show(page, 'Build');
+  await editCourses(page);
   await page.getByLabel('Find a course', { exact: true }).fill(query);
   const course = page.locator('.planner-course').filter({ has: page.locator('.course-code', { hasText: code }) });
   await course.waitFor();
@@ -26,6 +31,7 @@ async function search(page, query, code) {
 }
 async function generate(page) {
   await show(page, 'Build');
+  await editCourses(page);
   const response = page.waitForResponse(r => r.url().endsWith('/api/planner/generate') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
   const answer = await response;
@@ -70,7 +76,9 @@ try {
     assert.ok(result.request.choices.every(c => c.required));
     const savedBefore = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
     assert.deepEqual(savedBefore.sectionIds, []);
+    await page.getByText('Schedule metrics and section details', { exact: true }).click();
     assert.equal(await page.getByText('Class days', { exact: true }).first().isVisible(), true);
+    await page.getByText('Schedule metrics and section details', { exact: true }).click();
     assert.equal(await page.getByText(/search steps\./).isVisible(), false);
     assert.equal(await page.locator('.generation-results .week-calendar').isVisible(), true);
     assert.equal(await page.locator('.generation-results .calendar-legend li').count(), 10);
@@ -147,6 +155,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     if (width === 1440) {
       await show(page, 'Build');
+      await editCourses(page);
       const optional = page.locator('.generator-choices > li').last();
       await optional.locator('summary').click();
       await optional.getByLabel('Required course', { exact: true }).uncheck();
@@ -238,6 +247,7 @@ try {
     assert.deepEqual(restored.request.constraints.lockedSectionIds, []);
     assert.ok(restored.schedules.length > 1);
     assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), JSON.parse(savedDiscrete));
+    await editCourses(page);
     await page.getByLabel(`Keep section ${discreteSection.number} for 01:198:205`, { exact: true }).check();
     const single = await generate(page);
     assert.deepEqual(single.request.constraints.lockedSectionIds, [discreteSection.id]);
@@ -247,6 +257,7 @@ try {
     assert.deepEqual((await releasePins).request().postDataJSON().constraints.lockedSectionIds, []);
     await current.filter({ hasText: /Schedule 1 of [2-9] loaded/ }).waitFor();
     if (width === 1440) {
+      await editCourses(page);
       await page.getByText('Edit schedule preferences', { exact: true }).click();
       await page.getByText('Advanced Preferences', { exact: true }).click();
       await page.getByText('Section and campus exclusions', { exact: true }).click();
@@ -332,13 +343,16 @@ try {
   const protectedResult = await generate(page);
   assert.ok(protectedResult.schedules.every(s => s.selections.some(item => item.section.id === calculus.sections[0].id)));
   assert.ok(protectedResult.request.constraints.lockedSectionIds.includes(calculus.sections[0].id));
+  await editCourses(page);
   const manualChoice = page.locator('.generator-choices > li').filter({ hasText: calculus.code });
   await manualChoice.getByLabel(`Keep section ${calculus.sections[0].number} for ${calculus.code}`, { exact: true }).uncheck();
   const flexible = await generate(page);
   assert.equal(flexible.request.constraints.lockedSectionIds.includes(calculus.sections[0].id), false);
   // A preference change makes the preview stale; no result may be applied.
-  await page.getByText('Edit schedule preferences', { exact: true }).click();
+  await editCourses(page);
+      await page.getByText('Edit schedule preferences', { exact: true }).click();
   await page.getByLabel('Prefer days off', { exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Browse schedules', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Apply this schedule', exact: true }).isDisabled(), true);
   const protectedThree = ['14315', '14411', '14758'].map(index => catalog.flatMap(c => c.sections).find(s => s.index === index));
   const failed = calculus.sections[0];

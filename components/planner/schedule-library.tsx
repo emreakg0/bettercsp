@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { libraryKey, namedScheduleLimit, readScheduleLibrary, sameSchedule, scheduleName, scheduleNameLimit, suggestScheduleName,
   type NamedSchedule, type ScheduleLibrary, type ScheduleSnapshot } from '@/lib/scheduling/saved-schedules';
@@ -8,9 +9,10 @@ import { RegistrationIndex } from './registration-index';
 
 type Action = { kind: 'save' } | { kind: 'rename' | 'update' | 'delete' | 'activate'; id: string; updatedAt?: string; working?: ScheduleSnapshot };
 
-export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, legacy, capture, viewedId, onView, onClearCapture, onActivate, activationIssue, preflight, children }: {
+export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, legacy, capture, viewedId, onView, onClearCapture, onGeneratedSaved, onActivate, activationIssue, preflight, children }: {
   sourceId: string; active: boolean; ready: boolean; draft: ScheduleSnapshot; statuses: RegistrationStatuses; legacy: ScheduleSnapshot | null;
   capture: ScheduleSnapshot | null; viewedId: string | null; onView: (id: string | null) => void; onClearCapture: () => void;
+  onGeneratedSaved: (name: string) => void;
   onActivate: (saved: NamedSchedule, selections: Selection[]) => void;
   activationIssue: (saved: NamedSchedule, selections: Selection[]) => string;
   preflight: (saved: NamedSchedule, selections: Selection[], missing: number) => ReactNode; children: ReactNode;
@@ -23,6 +25,8 @@ export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, lega
   const [name, setName] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [resolved, setResolved] = useState<{ key: string; selections: Selection[]; error?: boolean } | null>(null);
+  const saveDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (capture && !saveDialog.current?.open) saveDialog.current?.showModal(); }, [capture]);
   const form = useRef<HTMLFormElement>(null);
   const draftButton = useRef<HTMLButtonElement>(null);
   const rows = loaded?.value.schedules ?? [];
@@ -118,8 +122,9 @@ export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, lega
   function finish(focus = true): void {
     setAction(null);
     setName('');
+    saveDialog.current?.close();
     onClearCapture();
-    if (focus) draftButton.current?.focus();
+    if (focus && !capture) draftButton.current?.focus();
   }
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -129,7 +134,8 @@ export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, lega
       if (nextAction.kind === 'save') {
         const row = created(input, capture ?? draft);
         write([...rows, row]);
-        onView(row.id);
+        if (capture) onGeneratedSaved(row.name);
+        else onView(row.id);
         setNotice(row.name + ' saved. Your working draft is unchanged.');
       } else if (actionTarget) {
         if (nextAction.updatedAt !== actionTarget.updatedAt || localStorage.getItem(key) !== loaded?.raw ||
@@ -158,6 +164,21 @@ export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, lega
 
   const issue = viewed && current && !current.error ? activationIssue(viewed, viewedSelections) : '';
   const confirm = nextAction && (!('id' in nextAction) || actionTarget) && (nextAction.kind !== 'activate' || actionTarget?.id === viewedId);
+  const operation = confirm && nextAction && <form ref={form} className="schedule-status library-form" aria-label="Schedule operation" onSubmit={submit}>
+        {capture && <p>Save a copy of the generated preview. Your working draft will stay intact.</p>}
+        {nextAction.kind === 'save' || nextAction.kind === 'rename' ? <label>Schedule name
+          <input key={capture ? 'generated' : actionTarget?.id ?? 'draft'} name="scheduleName" required maxLength={scheduleNameLimit}
+            defaultValue={capture ? suggestScheduleName('Generated schedule', rows) : name} />
+        </label> : <p>{nextAction.kind === 'delete' ? 'Delete “' + actionTarget?.name + '” from your library?'
+          : nextAction.kind === 'update' ? 'Replace the saved sections and locks in “' + actionTarget?.name + '” with your working draft?'
+          : 'Use “' + actionTarget?.name + '” as your working draft? This only changes BetterCSP. Your WebReg enrollment and registration reports stay intact. Save a named copy first if you want to keep your current edits.'}</p>}
+        <button className="button" disabled={!loaded || (!ready && nextAction.kind !== 'rename' && nextAction.kind !== 'delete') ||
+            (nextAction.kind === 'save' && rows.length >= namedScheduleLimit) || (nextAction.kind === 'activate' && (!!issue || !current || current.error))} type="submit">
+          {nextAction.kind === 'save' ? 'Save schedule' : nextAction.kind === 'rename' ? 'Save name' : nextAction.kind === 'delete' ? 'Delete schedule'
+            : nextAction.kind === 'update' ? 'Update saved schedule' : 'Confirm use this schedule'}
+        </button>
+        <button className="text-button" type="button" onClick={() => finish()}>Cancel</button>
+      </form>;
   return <div className="saved-library">
     <aside aria-label="My Saved Schedules">
       <h3>My Saved Schedules</h3>
@@ -202,21 +223,12 @@ export function ScheduleLibrary({ sourceId, active, ready, draft, statuses, lega
     <div className="library-content">
       {problem && <div role="alert" className="snapshot-note">{problem} <button className="text-button" onClick={() => setAttempt(value => value + 1)}>Retry loading library</button></div>}
       <p role="status" className="library-notice">{notice}</p>
-      {confirm && nextAction && <form ref={form} className="schedule-status library-form" aria-label="Schedule operation" onSubmit={submit}>
-        {capture && <p>Save a copy of the generated preview. Your working draft will stay intact.</p>}
-        {nextAction.kind === 'save' || nextAction.kind === 'rename' ? <label>Schedule name
-          <input key={capture ? 'generated' : actionTarget?.id ?? 'draft'} name="scheduleName" required maxLength={scheduleNameLimit}
-            defaultValue={capture ? suggestScheduleName('Generated schedule', rows) : name} />
-        </label> : <p>{nextAction.kind === 'delete' ? 'Delete “' + actionTarget?.name + '” from your library?'
-          : nextAction.kind === 'update' ? 'Replace the saved sections and locks in “' + actionTarget?.name + '” with your working draft?'
-          : 'Use “' + actionTarget?.name + '” as your working draft? This only changes BetterCSP. Your WebReg enrollment and registration reports stay intact. Save a named copy first if you want to keep your current edits.'}</p>}
-        <button className="button" disabled={!loaded || (!ready && nextAction.kind !== 'rename' && nextAction.kind !== 'delete') ||
-            (nextAction.kind === 'save' && rows.length >= namedScheduleLimit) || (nextAction.kind === 'activate' && (!!issue || !current || current.error))} type="submit">
-          {nextAction.kind === 'save' ? 'Save schedule' : nextAction.kind === 'rename' ? 'Save name' : nextAction.kind === 'delete' ? 'Delete schedule'
-            : nextAction.kind === 'update' ? 'Update saved schedule' : 'Confirm use this schedule'}
-        </button>
-        <button className="text-button" type="button" onClick={() => finish()}>Cancel</button>
-      </form>}
+      {capture ? createPortal(<dialog ref={saveDialog} className="planner-dialog" aria-label="Save generated schedule" onCancel={() => finish(false)}>
+        <h2>Save schedule</h2>
+        {problem && <p role="alert">{problem} <button className="text-button" onClick={() => setAttempt(value => value + 1)}>Reload library</button></p>}
+        {loaded && rows.length >= namedScheduleLimit && <p role="status">The library is full. Delete a saved schedule in My Schedule to make room.</p>}
+        {operation}
+      </dialog>, document.body) : operation}
       {viewed ? <section aria-label="Saved schedule preview">
         <h3 id="named-preview-heading" tabIndex={-1}>{viewed.name}</h3>
         <p className="muted">Saved preview · Your working draft is still available.</p>

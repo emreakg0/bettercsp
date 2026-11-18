@@ -387,7 +387,9 @@ recorded in [Registration Rescue](REGISTRATION_RESCUE.md). No WebReg transaction
 
 ## 9. Frontend Architecture and UX
 `/planner` exposes Build, My Schedule, and Rescue on both desktop and mobile. Build pairs catalog
-search and generation on wider screens and focuses the schedule preview after Generate on mobile.
+search and generation before opening a full-width schedule gallery. The gallery retains the current
+result and comparison during Edit courses, fits the timed week on desktop, and uses the existing
+named library through a save dialog.
 My Schedule holds the saved timetable, registration reports, undo and Preflight. A section's
 replacement action opens Rescue for that exact index. Applying a proposal returns to My Schedule.
 The `view` parameter and optional public section index participate in browser history. Plain

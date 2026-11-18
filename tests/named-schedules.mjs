@@ -110,6 +110,9 @@ try {
     await page.getByRole('button', { name: 'Save as new named schedule' }).click();
     await operation.getByLabel('Schedule name').fill('Generated copy');
     await operation.getByRole('button', { name: 'Save schedule' }).click();
+    await page.getByRole('status').filter({ hasText: 'Generated copy saved.' }).first().waitFor();
+    await page.getByRole('button', { name: 'My Schedule', exact: true }).click();
+    await named('Generated copy').click();
     await preview.getByRole('heading', { name: 'Generated copy' }).waitFor();
     assert.deepEqual((await read(page, draftKey)).sectionIds, [ids[2]]);
     await preview.getByRole('button', { name: 'Use this schedule' }).click();

@@ -1,11 +1,12 @@
 import { ReadinessFindings } from './registration-readiness';
 import type { StudentProfile } from '@/lib/eligibility/types';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { formatTime } from '@/lib/scheduling/meetings';
 import { RegistrationPreflight } from './registration-preflight';
 import type { PlanningContext } from '@/lib/eligibility/preflight';
 import type { GenerationResult, HardConstraints, RankedSchedule } from '@/lib/scheduling/generation-types';
+import type { Selection } from '@/lib/scheduling/selection';
 import { WeeklyCalendar } from './weekly-calendar';
 
 function Metrics({ schedule }: { schedule: RankedSchedule }) {
@@ -15,15 +16,20 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, onSave, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore, emptyBatch, allFixed, onTryOtherSections, onReviewSchedule }: {
+export function GenerationResults({ result, stale, onApply, onSave, saveNotice, onEdit, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore, emptyBatch, allFixed, onTryOtherSections, onReviewSchedule }: {
   planning: PlanningContext; preflightConstraints: HardConstraints | null; protectedIds: string[];
   profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule, rescueSectionId?: string) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
+  saveNotice: string; onEdit: () => void;
   onSave: (schedule: RankedSchedule) => void;
   emptyBatch: boolean; allFixed: boolean; onTryOtherSections?: () => void; onReviewSchedule: () => void;
 }) {
+  const [fit, setFit] = useState(true);
+  const [inspected, setInspected] = useState<Selection | null>(null);
+  const inspection = useRef<HTMLDialogElement>(null);
   const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const index = Math.max(0, Math.min(requestedIndex, result.schedules.length - 1));
   const schedule = result.schedules[index];
+  const registrationConcerns = schedule?.eligibility.filter(item => item.status !== "no-known-blocker").length ?? 0;
   const progress = result.discovery;
   const hasMore = !!progress?.nextCursor && !stale && !pageError?.restart;
   const atEnd = index >= result.schedules.length - 1;
@@ -38,6 +44,45 @@ export function GenerationResults({ result, stale, onApply, onSave, canApply, pr
     }
   }
   return <section className="generation-results" aria-label="Generated schedules">
+    <div className="browse-toolbar">
+    {(schedule || hasMore) && <nav className="generation-navigation" aria-label="Generated schedule navigation" tabIndex={0} aria-keyshortcuts="ArrowLeft ArrowRight"
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          if (event.key === 'ArrowLeft' && index > 0) { event.preventDefault(); setIndex(index - 1); }
+          if (event.key === 'ArrowRight' && (!atEnd || (hasMore && canExplore && !pageError))) { event.preventDefault(); next(); }
+        }}>
+        <button className="button schedule-nav-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>
+        <strong aria-live="polite">{schedule ? `Schedule ${index + 1} of ${result.schedules.length} loaded` : '0 schedules loaded'}</strong>
+        <button className="button schedule-nav-button" disabled={atEnd && (!hasMore || !canExplore || !!pageError)} onClick={next}>Next schedule →</button>
+      </nav>}
+      <div className="browse-actions">
+        <button className="text-button" onClick={onEdit}>Edit courses</button>
+        {schedule && <>
+          <button className="text-button" onClick={() => setFit(!fit)}>{fit ? 'Expand calendar' : 'Fit to screen'}</button>
+          <button className="text-button" disabled={stale || !canApply} onClick={() => onSave(schedule)}>Save as new named schedule</button>
+          <button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
+          <button className="text-button" onClick={() => {
+            const panel = document.querySelector<HTMLDetailsElement>('#generated-preflight');
+            if (panel) { panel.open = true; panel.querySelector('summary')?.focus(); }
+          }}>{registrationConcerns ? `${registrationConcerns} registration ${registrationConcerns === 1 ? 'concern' : 'concerns'} · Review` : 'Review registration'}</button>
+        </>}
+        <details><summary>Keyboard shortcuts</summary><p>Focus schedule navigation, then use the left and right arrow keys.</p></details>
+      </div>
+      <p className="browse-feedback" role="status">{loadingMore ? 'Loading next schedules…' : saveNotice}</p>
+    </div>
+    {schedule && <WeeklyCalendar selections={schedule.selections} idPrefix="generated" fit={fit} onInspect={selection => {
+      setInspected(selection);
+      inspection.current?.showModal();
+    }} />}
+    <dialog ref={inspection} className="planner-dialog" aria-labelledby="meeting-inspection-title">
+      <h2 id="meeting-inspection-title">{inspected?.course.title ?? 'Section details'}</h2>
+      <form method="dialog"><button className="button">Close details</button></form>
+      {inspected && <>
+        <p>{inspected.course.code} · Section {inspected.section.number} · Index {inspected.section.index}</p>
+        {inspected.course.prerequisites && <p>{inspected.course.prerequisites}</p>}
+        <SectionList sections={[inspected.section]} initiallyOpen />
+      </>}
+    </dialog>
     {!stale && result.truncated && (progress?.sessionLimited || (!progress?.resumable && !hasMore)) && <p role="status" className="snapshot-note">{progress?.sessionLimited
       ? 'This search reached its session limit. Some combinations remain unchecked.'
       : 'The search reached its work limit. Some combinations remain unchecked.'}</p>}
@@ -46,12 +91,6 @@ export function GenerationResults({ result, stale, onApply, onSave, canApply, pr
     {!schedule && <p className="muted">{progress?.nextCursor
       ? 'No schedules found yet. Continue searching the remaining combinations.'
       : 'No schedule was found. Review the reasons above, then adjust a constraint or change your course choices and generate again.'}</p>}
-    {(schedule || hasMore) && <nav className="generation-navigation" aria-label="Generated schedule navigation">
-        <button className="button schedule-nav-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>
-        <strong aria-live="polite">{schedule ? `Schedule ${index + 1} of ${result.schedules.length} loaded` : '0 schedules loaded'}</strong>
-        <button className="button schedule-nav-button" disabled={atEnd && (!hasMore || !canExplore || !!pageError)} onClick={next}>Next schedule →</button>
-      </nav>}
-      {loadingMore && <p role="status" className="muted">Loading next schedules…</p>}
       {!stale && pageError && <div role="alert" className="muted">{pageError.message}{!pageError.restart && hasMore
         && <button className="text-button" disabled={!canExplore || loadingMore} onClick={onExplore}>Retry next batch</button>}</div>}
       {!stale && atEnd && emptyBatch && hasMore && !loadingMore && !pageError && <p role="status" className="muted">The last batch found no new schedules. Choose Next schedule to keep searching.</p>}
@@ -64,20 +103,20 @@ export function GenerationResults({ result, stale, onApply, onSave, canApply, pr
       {!stale && !onlyOne && !progress?.nextCursor && schedule && !result.truncated && progress?.exhausted && <p className="muted">{progress.uniqueValid !== progress.retained
         ? 'Search finished. All shortlisted schedules are loaded.' : 'Search finished. All compatible schedules are loaded.'}</p>}
     {schedule && <>
-      <RegistrationPreflight key={schedule.id} selections={schedule.selections} profile={profile} planning={planning}
+      <RegistrationPreflight id="generated-preflight" key={schedule.id} selections={schedule.selections} profile={profile} planning={planning}
         protectedIds={protectedIds} constraints={preflightConstraints} stale={stale}
         onRescue={canApply && !stale ? sectionId => onApply(schedule, sectionId) : undefined}
         rescueLabel="Apply this preview and open Registration Rescue" />
-      <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
+      <details><summary>Schedule metrics and section details</summary>
       <Metrics schedule={schedule} />
       {schedule.selections.map(selection => <article id={`generated-${selection.section.index}`} key={selection.section.id}>
         <h4>{selection.course.code} · {selection.course.title}</h4>
         <p className="muted">Section {selection.section.number} · {selection.section.instructors.join(', ') || 'Instructor not listed'}{selection.section.availability !== 'open' && ` · Seats ${selection.section.availability} in snapshot`}</p>
         <details><summary>Section details and registration notes</summary><SectionList sections={[selection.section]} /></details>
       </article>)}
+      </details>
       {!!schedule.omittedCourses.length && <p>Optional courses omitted: {schedule.omittedCourses.join(', ')}.</p>}
-      <div className="generation-actions"><button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
-        <button className="text-button" disabled={stale || !canApply} onClick={() => onSave(schedule)}>Save as new named schedule</button>
+      <div className="generation-actions">
         <button className="button" disabled={stale || !canApply} onClick={() => onApply(schedule)}>Apply this schedule</button></div>
       {compared !== null && <div className="schedule-comparison"><h4>Compare with schedule {compared + 1}</h4>
         <table><thead><tr><th>Metric</th><th>Pinned #{compared + 1}</th><th>Current #{index + 1}</th></tr></thead><tbody>

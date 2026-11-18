@@ -1,22 +1,26 @@
+import type { CSSProperties } from 'react';
 import { calendarCampus, calendarCampuses } from '@/lib/catalog/calendar-campus';
 import { formatDay, formatTime, isScheduled, weekDays } from '@/lib/scheduling/meetings';
 import type { Selection } from '@/lib/scheduling/selection';
 
 // No calendar primitive exists; this view positions every normalized meeting independently.
-export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selections: Selection[]; idPrefix?: string }) {
+export function WeeklyCalendar({ selections, idPrefix = 'selected', fit = false, onInspect }: { selections: Selection[]; idPrefix?: string; fit?: boolean; onInspect?: (selection: Selection) => void }) {
   const events = selections.flatMap(item => item.section.meetings.flatMap((meeting, i) =>
     isScheduled(meeting) ? [{ ...item, meeting, campus: calendarCampus(meeting.campus), key: `${item.section.id}:${i}` }] : []));
-  const start = Math.min(8 * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
-  const end = Math.max(20 * 60, ...events.map(e => Math.ceil(e.meeting.endMinute / 60) * 60));
+  const start = Math.min((onInspect ? 7 : 8) * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
+  const end = Math.max((onInspect ? 23 : 20) * 60, ...events.map(e => Math.ceil(e.meeting.endMinute / 60) * 60));
   const hours = Array.from({ length: (end - start) / 60 + 1 }, (_, i) => start + i * 60);
+  const percent = (minutes: number) => `${100 * minutes / (end - start)}%`;
+  const axis = fit ? 'var(--fit-axis)' : end - start;
+  const Event = onInspect ? 'button' : 'a';
   return <>{!events.length && <p className="schedule-status">{selections.length
     ? 'No timed meetings to display. Review section details for asynchronous coursework, arranged meetings, or times that need verification.'
     : 'Your calendar is empty. Add a section from course search or apply a generated schedule to see your week.'}</p>}
-    <div className="calendar-scroll" tabIndex={0} role="region" aria-label="Weekly calendar, scroll horizontally for all seven days">
+    <div className={fit ? "calendar-scroll calendar-fit" : "calendar-scroll"} tabIndex={0} role="region" aria-label="Weekly calendar, scroll horizontally for all seven days">
     <div className="week-calendar">
       <div className="calendar-label">ET</div>{weekDays.map(day => <div className="calendar-label" key={day}>{formatDay(day)}</div>)}
-      <div className="hour-axis" style={{ height: end - start }}>{hours.map(hour =>
-        <span key={hour} style={{ top: hour - start }}>{formatTime(hour)}</span>)}</div>
+      <div className="hour-axis" style={{ height: axis }}>{hours.map(hour =>
+        <span key={hour} style={{ top: percent(hour - start) }}>{formatTime(hour)}</span>)}</div>
       {weekDays.map(day => {
         const daily = events.filter(e => e.meeting.dayCode === day)
           .sort((a, b) => a.meeting.startMinute - b.meeting.startMinute || a.key.localeCompare(b.key));
@@ -28,7 +32,7 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selectio
           groups[groups.length - 1].push(event);
           groupEnd = Math.max(groupEnd, event.meeting.endMinute);
         }
-        return <div className="calendar-day" key={day} style={{ height: end - start }}>
+        return <div className="calendar-day" key={day} style={{ height: axis, "--hour-step": percent(60) } as CSSProperties}>
           {groups.flatMap(group => {
             const laneEnds: number[] = [];
             const placed = group.map(event => {
@@ -37,14 +41,16 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selectio
               laneEnds[lane] = event.meeting.endMinute;
               return { event, lane };
             });
-            return placed.map(({ event, lane }) => <a key={event.key} href={`#${idPrefix}-${event.section.index}`}
-              className="calendar-event" data-campus={event.campus} data-closed={event.section.availability === 'closed' || undefined} style={{ top: event.meeting.startMinute - start,
-                height: event.meeting.endMinute - event.meeting.startMinute, left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
-              <strong>{event.course.code} · {event.campus === 'other' ? event.meeting.campus || 'Unknown campus' : calendarCampuses[event.campus]}</strong>
+            return placed.map(({ event, lane }) => <Event key={event.key} href={onInspect ? undefined : `#${idPrefix}-${event.section.index}`}
+              onClick={onInspect ? () => onInspect(event) : undefined} type={onInspect ? 'button' : undefined}
+              aria-label={fit ? `${event.course.title}, section ${event.section.number}, ${formatDay(day)} ${formatTime(event.meeting.startMinute)} to ${formatTime(event.meeting.endMinute)}, ${event.meeting.campus || 'campus unknown'}${event.section.availability === 'closed' ? ', closed in snapshot' : ''}` : undefined}
+              className="calendar-event" data-campus={event.campus} data-closed={event.section.availability === 'closed' || undefined} style={{ top: percent(event.meeting.startMinute - start),
+                height: percent(event.meeting.endMinute - event.meeting.startMinute), left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
+              <strong>{event.course.code}{!fit && <> · {event.campus === 'other' ? event.meeting.campus || 'Unknown campus' : calendarCampuses[event.campus]}</>}</strong>
               {event.section.availability === 'closed' && <span>Closed in snapshot</span>}<span>{event.meeting.mode || 'Meeting'} · {event.section.number}</span>
               <span>{formatTime(event.meeting.startMinute)}–{formatTime(event.meeting.endMinute)}</span>
               <span>{[event.meeting.building, event.meeting.room].filter(Boolean).join(' · ')}</span>
-            </a>);
+            </Event>);
           })}
         </div>;
       })}

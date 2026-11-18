@@ -45,6 +45,12 @@ export function PlannerWorkspace({ sourceId, catalogRevision, courses, children 
     choices?: { before: GeneratorChoice[]; after: GeneratorChoice[] } } | null>(null);
   const academicControl = useRef<{ planCourse: (code: string) => void }>(null);
   const [legacy, setLegacy] = useState<ScheduleSnapshot | null>(null);
+  const [saveNotice, setSaveNotice] = useState('');
+  useEffect(() => {
+    if (!saveNotice) return;
+    const timeout = setTimeout(() => setSaveNotice(''), 5000);
+    return () => clearTimeout(timeout);
+  }, [saveNotice]);
   const [capture, setCapture] = useState<ScheduleSnapshot | null>(null);
   const [activation, setActivation] = useState(0);
   const [missing, setMissing] = useState<string[]>([]);
@@ -252,10 +258,10 @@ export function PlannerWorkspace({ sourceId, catalogRevision, courses, children 
       <button className="text-button" onClick={() => { setShowGuide(false); try { localStorage.setItem('bettercsp:planner:guide:v1', 'dismissed'); } catch { /* Dismissal still works for this visit. */ } }}>Dismiss quick start</button>
     </aside>}
     <ScheduleGenerator sourceId={sourceId} choices={choices} onChoicesChange={setChoices} selections={selections} locks={effectiveLocks} statuses={statuses}
-      ready={canGenerate} onApply={apply} draftRevision={activation} onSave={schedule => {
+      ready={canGenerate} onApply={apply} draftRevision={activation} saveNotice={saveNotice} onSave={schedule => {
         const ids = schedule.selections.map(s => s.section.id);
         setCapture({ sectionIds: ids, lockedSectionIds: locks.filter(id => ids.includes(id)) });
-        navigate('schedule', null, undefined, null);
+        setSaveNotice('');
       }} profile={profile} planning={academicProfile}
       preflightConstraints={preflightConstraints} settings={settings} onSettingsChange={setSettings}
       active={view === 'build'} onRemoveCourse={id => setChoices(current => current.filter(course => course.courseId !== id))} onSearch={() => focusDestination('course-search')}
@@ -286,7 +292,7 @@ export function PlannerWorkspace({ sourceId, catalogRevision, courses, children 
     <section hidden={view !== 'schedule'} className="saved-schedule" aria-label="Your weekly schedule">
       <div className="results-heading"><h2 id="planner-schedule-heading" tabIndex={-1}>My Schedule</h2><p role="status">{saveStatus}</p></div>
       <ScheduleLibrary sourceId={sourceId} active={view === 'schedule'} ready={ready} draft={draftSnapshot} statuses={statuses} legacy={legacy}
-        capture={capture} viewedId={viewedId} onView={id => navigate('schedule', null, undefined, id)} onClearCapture={() => setCapture(null)}
+        capture={capture} onGeneratedSaved={name => setSaveNotice(name + ' saved.')} viewedId={viewedId} onView={id => navigate('schedule', null, undefined, id)} onClearCapture={() => setCapture(null)}
         onActivate={activate} activationIssue={(saved, picks) => {
           try { activateNamedSchedule(draft, missing, saved, picks); return ''; }
           catch (err) { return err instanceof Error ? err.message : 'This schedule could not be checked.'; }

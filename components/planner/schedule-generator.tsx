@@ -10,14 +10,18 @@ import { GenerationResults } from './generation-results';
 
 export interface GeneratorChoice { courseId: string; code: string; title: string; required: boolean; campuses: string[]; keepSection?: boolean }
 // New orchestration is limited to generation requests; manual persistence remains workspace-owned.
-export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, statuses, ready, onApply, onSave, draftRevision, profile, planning, preflightConstraints, settings, onSettingsChange, picker, active, onRemoveCourse, onSearch, onReviewSchedule }: {
+export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selections, locks, statuses, ready, onApply, onSave, saveNotice, draftRevision, profile, planning, preflightConstraints, settings, onSettingsChange, picker, active, onRemoveCourse, onSearch, onReviewSchedule }: {
   planning: PlanningContext; preflightConstraints: HardConstraints | null; statuses: RegistrationStatuses;
   picker: ReactNode; active: boolean; onRemoveCourse: (courseId: string) => void; onSearch: () => void; onReviewSchedule: () => void;
   settings: GenerationSettings; onSettingsChange: (settings: GenerationSettings) => void; profile: StudentProfile; sourceId: string; choices: GeneratorChoice[]; onChoicesChange: (choices: GeneratorChoice[]) => void;
   selections: Selection[]; locks: string[]; ready: boolean;
+  saveNotice: string;
   onSave: (schedule: RankedSchedule) => void; draftRevision: number;
   onApply: (schedule: RankedSchedule, targetIds: string[], rescueSectionId?: string) => boolean;
 }) {
+  const [browsing, setBrowsing] = useState(false);
+  const gallery = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (browsing && active) { gallery.current?.scrollIntoView({ block: "start" }); gallery.current?.querySelector<HTMLElement>("nav[aria-keyshortcuts]")?.focus({ preventScroll: true }); } }, [browsing, active]);
   const [excludeConfirmed, setExcludeConfirmed] = useState(false);
   const [pending, setPending] = useState<'initial' | 'more' | null>(null), [error, setError] = useState('');
   const [pageError, setPageError] = useState<{ message: string; restart: boolean } | null>(null);
@@ -79,6 +83,7 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
         });
       } else {
         setResponse({ result, basis: searchBasis, serial: ++serial.current });
+        setBrowsing(true);
       }
     } catch (err) {
       if (!abort.signal.aborted) {
@@ -95,11 +100,11 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
     if (regenerate) void generate(false, flexible);
   }
   return <>
-    <div className="planner-workflow-actions"><span>{choices.length} {choices.length === 1 ? 'course' : 'courses'} added · up to 12</span>
+    <div className="planner-workflow-actions" hidden={browsing}><span>{choices.length} {choices.length === 1 ? 'course' : 'courses'} added · up to 12</span>
       <button className="button" disabled={!ready || !!pending || (!choices.length && !locks.length)} onClick={() => void generate()}>{pending === 'initial' ? 'Generating schedules…' : 'Generate schedules'}</button>
     </div>
-    <div className="planner-workspace">
-    <section className="planner-courses" aria-label="Find and add courses">
+    <div ref={gallery} className={browsing ? "planner-workspace schedule-gallery" : "planner-workspace"}>
+    <section hidden={browsing} className="planner-courses" aria-label="Find and add courses">
       {picker}
       <section className="schedule-generator" aria-label="Automatic schedule generator">
         <h2>Your courses <span className="count">{choices.length}</span></h2>
@@ -126,8 +131,8 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
       </section>
     </section>
     <section className="planner-schedule" aria-label="Schedule preview">
-        <div className="results-heading generation-heading"><h2 ref={heading} tabIndex={-1}>Schedule options</h2><button className="text-button" onClick={onSearch}>Back to course search</button></div>
-        <details className="result-preferences" open={!response}><summary>Edit schedule preferences</summary>
+        <div hidden={browsing} className="results-heading generation-heading"><h2 ref={heading} tabIndex={-1}>Schedule options</h2><button className="text-button" onClick={onSearch}>Back to course search</button></div>
+        <details hidden={browsing} className="result-preferences" open={!response}><summary>Edit schedule preferences</summary>
         <GenerationControls value={settings} onChange={onSettingsChange} campuses={campuses} />
         <details className="eligibility-settings"><summary>Eligibility filtering · optional</summary>
           <label className="academic-checkbox"><input type="checkbox" checked={excludeConfirmed} onChange={e => setExcludeConfirmed(e.target.checked)} />Exclude confirmed mismatches against my academic information</label>
@@ -139,10 +144,11 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
 
         {pending === 'initial' && <p role="status" className="muted">Finding schedules for your courses… Your saved schedule is unchanged.</p>}
         {!response && !pending && <div className="schedule-status"><p>Add your courses, then generate schedules to compare possible weeks. Your saved schedule stays as it is until you apply a result.</p></div>}
-        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} planning={planning} preflightConstraints={preflightConstraints} protectedIds={locks} loadingMore={pending === 'more'}
+        {response && !browsing && <button className="button" onClick={() => setBrowsing(true)}>Browse schedules</button>}
+        {response && <div hidden={!browsing}><GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} planning={planning} preflightConstraints={preflightConstraints} protectedIds={locks} loadingMore={pending === 'more'}
           canExplore={active && ready && pending !== 'initial'} pageError={pageError} onExplore={() => void generate(true)} emptyBatch={!!response.emptyBatch}
           allFixed={allFixed} onTryOtherSections={hasPins ? () => allowOtherSections(true) : undefined} onReviewSchedule={onReviewSchedule}
-          onSave={onSave} onApply={(schedule, rescueSectionId) => { onApply(schedule, choices.map(c => c.courseId), rescueSectionId); }} />}
+          onEdit={() => { setBrowsing(false); requestAnimationFrame(onSearch); }} saveNotice={saveNotice} onSave={onSave} onApply={(schedule, rescueSectionId) => { onApply(schedule, choices.map(c => c.courseId), rescueSectionId); }} /></div>}
     </section>
     </div>
   </>;

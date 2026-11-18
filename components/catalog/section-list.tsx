@@ -8,9 +8,9 @@ function fieldLabel(field: string): string {
 function SectionWarning({ text }: { text: string }) {
   return text ? <span className="section-preflight-warning">{text}</span> : null;
 }
-export function SectionList({ sections, renderAction, warning }: { sections: Omit<Section, 'raw'>[]; renderAction?: (section: Omit<Section, 'raw'>) => ReactNode; warning?: (section: Omit<Section, 'raw'>) => string }) {
+export function SectionList({ sections, renderAction, warning, initiallyOpen }: { sections: Omit<Section, 'raw'>[]; renderAction?: (section: Omit<Section, 'raw'>) => ReactNode; initiallyOpen?: boolean; warning?: (section: Omit<Section, 'raw'>) => string }) {
   return <div className="sections">{sections.map(section => (
-    <details className="section" key={section.id}>
+    <details className="section" open={initiallyOpen} key={section.id}>
       <summary>
         <span className="section-name">Section {section.number}<small>Index <span className="index">{section.index}</span></small></span>
         <span className="section-instructor">{section.honors && <strong className="honors-label">{section.honors.kind === 'designated' ? 'Honors section' : 'Honors program information'} · </strong>}{section.instructors.join(', ') || 'Instructor not listed'}</span>

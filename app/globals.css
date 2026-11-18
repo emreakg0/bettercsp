@@ -249,3 +249,26 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .registration-mode-list { list-style: none; padding-left: 0; }
 .registration-mode-list li { border-top: 1px solid var(--line); padding-top: 6px; }
 .registration-mode-list li > div { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+
+/* Keep the gallery on the same page and preserve its scroll container across results. */
+.schedule-gallery { display: block; scroll-margin-top: 62px; }
+.planner-shell [hidden] { display: none; }
+.browse-toolbar { position: sticky; top: 60px; z-index: 2; background: var(--background); padding: 4px 0; }
+.browse-toolbar .generation-navigation { margin: 0; }
+.browse-actions { display: flex; align-items: center; flex-wrap: wrap; column-gap: 16px; }
+.browse-actions summary { cursor: pointer; font-size: 12px; }
+.browse-feedback { min-height: 18px; font-size: 12px; margin: 0; }
+.calendar-fit { --fit-axis: max(340px, calc(100dvh - 226px)); }
+.calendar-fit .calendar-label { padding-block: 5px; }
+.calendar-fit .calendar-day { background: linear-gradient(to bottom, transparent calc(100% - 1px), var(--line) 0) 0 0 / 100% var(--hour-step); }
+.calendar-fit .calendar-event { overflow: hidden; text-align: left; font-size: 11px; white-space: nowrap; }
+.calendar-fit .calendar-event strong { line-height: 1.1; text-overflow: ellipsis; overflow: hidden; }
+.calendar-fit .calendar-event span { display: none; }
+.planner-dialog { margin: auto; width: min(560px, calc(100% - 28px)); max-height: 85dvh; overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--background); }
+.planner-dialog::backdrop { background: rgb(0 0 0 / .35); }
+#generated-preflight, .browse-toolbar :focus-visible { scroll-margin-top: 170px; }
+@media (max-width: 760px) {
+  .browse-actions { column-gap: 12px; }
+  .calendar-fit { --fit-axis: max(440px, calc(100dvh - 270px)); }
+}
+#generated-preflight > summary { scroll-margin-top: 170px; }
