@@ -1,6 +1,6 @@
 import type { Section } from '../catalog/types.ts';
 import { isScheduled, weekDays } from './meetings.ts';
-import type { PreferenceWeights, ScheduleMetrics, ScorePart } from './generation-types.ts';
+import { eveningThreshold, type PreferenceWeights, type ScheduleMetrics, type ScorePart } from './generation-types.ts';
 
 // Metrics and weighted penalties are pure and separate from eligibility and seat status.
 export function isPhysicalCampus(campus: string): boolean {
@@ -27,9 +27,14 @@ export function scoreSchedule(sections: Section[], weights: PreferenceWeights, p
     unmatchedInstructors: preferred.length ? sections.filter(s => !s.instructors.some(name =>
       preferred.some(p => name.toLowerCase().includes(p.trim().toLowerCase())))).length : 0,
   };
+  const eveningWeight = weights.lateEvenings ?? 0;
   const breakdown: ScorePart[] = [
     { label: 'Class days', amount: weights.daysOff * metrics.classDays },
     { label: 'Earlier daily starts', amount: weights.laterStarts * (metrics.meanFirstStart === null ? 0 : 24 - metrics.meanFirstStart / 60) },
+    ...(eveningWeight > 0 ? [{
+      label: 'Meeting hours after 7 PM',
+      amount: eveningWeight * events.reduce((total, meeting) => total + Math.max(0, meeting.endMinute - eveningThreshold), 0) / 60,
+    }] : []),
     { label: 'Hours between classes', amount: weights.gaps * metrics.gapMinutes / 60 },
     { label: 'Campus changes (proxy)', amount: weights.campusChanges * metrics.campusTransitions },
     { label: 'Days on campus', amount: weights.commuteDays * metrics.commuteDays },

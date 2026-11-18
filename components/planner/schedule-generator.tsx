@@ -16,33 +16,48 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
   onApply: (schedule: RankedSchedule, targetIds: string[]) => boolean;
 }) {
   const [excludeConfirmed, setExcludeConfirmed] = useState(false);
-  const [pending, setPending] = useState(false), [error, setError] = useState('');
+  const [pending, setPending] = useState<'initial' | 'more' | null>(null), [error, setError] = useState('');
   const [response, setResponse] = useState<{ result: GenerationResult; basis: string; serial: number } | null>(null);
   const [applied, setApplied] = useState(false);
   const controller = useRef<AbortController | null>(null), serial = useRef(0);
   const basis = JSON.stringify({ choices, settings, profile, excludeConfirmed, selections: selections.map(s => s.section.id), locks });
   useEffect(() => () => controller.current?.abort(), []);
   const campuses = [...new Set([...choices.flatMap(c => c.campuses), ...selections.flatMap(s => s.section.meetings.map(m => m.campus))].map(c => c.toUpperCase()))].filter(Boolean).sort();
-  async function generate(): Promise<void> {
+  async function generate(more = false): Promise<void> {
+    const cursor = more ? response?.result.discovery?.nextCursor : null;
+    if (!ready || pending || (more && (!cursor || response?.basis !== basis))) return;
     controller.current?.abort();
     const abort = new AbortController(); controller.current = abort;
-    setPending(true); setError(''); setApplied(false); onViewChange('calendar'); onScheduleViewChange('results');
+    setPending(more ? 'more' : 'initial');
+    setError('');
+    if (!more) { setApplied(false); onViewChange('calendar'); onScheduleViewChange('results'); }
     try {
       const excluded = excludedIndexIds(settings.excludedIndexes, sourceId);
       const contextualLocks = selections.filter(s => !choices.some(c => c.courseId === s.course.id && !c.keepSection)).map(s => s.section.id);
-      const payload = { sourceId, eligibility: { profile, excludeConfirmed }, choices: choices.map(({ courseId, required }) => ({ courseId, required })),
+      const payload = { sourceId, discoveryCursor: cursor, eligibility: { profile, excludeConfirmed }, choices: choices.map(({ courseId, required }) => ({ courseId, required })),
         constraints: { ...settings.hard, excludedSectionIds: excluded, lockedSectionIds: [...new Set([...locks, ...contextualLocks])] },
         weights: settings.weights, preferredInstructors: settings.instructors.split('\n').map(s => s.trim()).filter(Boolean) };
       const request = await fetch('/api/planner/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: abort.signal });
-      const result = await request.json();
-      if (!request.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Generation failed. Retry with fewer courses.');
-      if (!abort.signal.aborted) { setResponse({ result: result as GenerationResult, basis, serial: ++serial.current }); onViewChange('calendar'); onScheduleViewChange('results'); }
+      const body = await request.json();
+      if (!request.ok) throw new Error(typeof body.error === 'string' ? body.error : 'Generation failed. Retry with fewer courses.');
+      if (abort.signal.aborted) return;
+      const result = body as GenerationResult;
+      if (more) {
+        if (!result.schedules.length) throw new Error('The schedule search changed. Generate schedules again.');
+        setResponse(current => {
+          if (current?.basis !== basis || current.result.discovery?.nextCursor !== cursor) return current;
+          const seen = new Set(current.result.schedules.map(schedule => schedule.id));
+          return { ...current, result: { ...result, schedules: [...current.result.schedules, ...result.schedules.filter(schedule => !seen.has(schedule.id))] } };
+        });
+      } else {
+        setResponse({ result, basis, serial: ++serial.current });
+      }
     } catch (err) { if (!abort.signal.aborted) setError(err instanceof Error ? err.message : 'Unable to generate. Check your connection and retry.'); }
-    finally { if (controller.current === abort) setPending(false); }
+    finally { if (controller.current === abort) setPending(null); }
   }
   return <>
     <div className="planner-workflow-actions"><span>{choices.length} {choices.length === 1 ? 'course' : 'courses'} added · up to 12</span>
-      <button className="button" disabled={!ready || pending || (!choices.length && !locks.length)} onClick={() => void generate()}>{pending ? 'Generating schedules…' : 'Generate schedules'}</button>
+      <button className="button" disabled={!ready || !!pending || (!choices.length && !locks.length)} onClick={() => void generate()}>{pending === 'initial' ? 'Generating schedules…' : 'Generate schedules'}</button>
     </div>
     <div className={`planner-workspace show-${view}`}>
     <section className="planner-courses" aria-label="Find and add courses">
@@ -71,18 +86,20 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
         <button aria-pressed={scheduleView === 'saved'} onClick={() => onScheduleViewChange('saved')}>Saved schedule ({selections.length})</button>
       </div>
       <div hidden={scheduleView !== 'results'}>
+        <details className="result-preferences" open={!response}><summary>Edit schedule preferences</summary>
         <GenerationControls value={settings} onChange={onSettingsChange} campuses={campuses} />
         <details className="eligibility-settings"><summary>Eligibility filtering · optional</summary>
           <label className="academic-checkbox"><input type="checkbox" checked={excludeConfirmed} onChange={e => setExcludeConfirmed(e.target.checked)} />Exclude confirmed mismatches against my academic information</label>
           <p className="muted">Unknown eligibility and permission requirements remain visible. Add academic information under Registration settings. A protected incompatible section can prevent results.</p>
         </details>
+        </details>
         {!ready && <p role="status" className="muted">Resolve saved-section or earlier registration-report notices in your saved schedule before generating.</p>}
-        <p className="muted">Up to 12 courses. Existing sections stay fixed unless you allow changes in Course options. Seats and eligibility still need verification.</p>
         {error && <p role="alert" className="snapshot-note">{error} Your saved schedule is unchanged.</p>}
 
-        {pending && <p role="status" className="muted">Finding schedules for your courses… Your saved schedule is unchanged.</p>}
+        {pending === 'initial' && <p role="status" className="muted">Finding schedules for your courses… Your saved schedule is unchanged.</p>}
         {!response && !pending && <div className="schedule-status"><h2>Schedule preview</h2><p>Add your courses, then choose “Generate schedules” to compare possible weeks. Your saved schedule will stay unchanged until you apply a result.</p></div>}
-        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis || pending} canApply={ready && !pending} profile={profile}
+        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && !pending} profile={profile} loadingMore={pending === 'more'}
+          canExplore={ready && !pending} onExplore={() => void generate(true)}
           onApply={schedule => { if (onApply(schedule, choices.map(c => c.courseId))) { setApplied(true); onScheduleViewChange('saved'); } }} />}
       </div>
       <div hidden={scheduleView !== 'saved'}>{applied && <p role="status">Applied to your saved schedule.</p>}{manualSchedule}</div>

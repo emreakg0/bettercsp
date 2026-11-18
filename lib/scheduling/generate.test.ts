@@ -232,3 +232,72 @@ test('applying a result rejects a conflict with a retained manual section', () =
   const a = plannerCourse(course('A', [section('a')])), b = plannerCourse(course('B', [section('b')]));
   assert.throws(() => applyGenerated(selectSection([], a, a.sections[0]), selectSection([], b, b.sections[0]), [b.id], []), /overlap/);
 });
+
+test('discovery replays a unique stable ranking across batches and preserves locks and policy', () => {
+  const writing = catalog.find(c => c.code === '01:355:101')!;
+  const discrete = catalog.find(c => c.code === '01:198:205')!;
+  const courses = [dataStructures, calculus, discrete, writing];
+  const input = request(courses);
+  input.constraints.lockedSectionIds = [calculus.sections[0].id];
+  input.choices[2].required = false;
+  const first = generateSchedules(courses, input, { discoveryOffset: 0 });
+  assert.deepEqual(first, generateSchedules(courses, input, { discoveryOffset: 0 }));
+  const [offset, revision] = first.discovery!.nextCursor!.split(':');
+  const second = generateSchedules(courses, input, { discoveryOffset: Number(offset), discoveryRevision: revision });
+  const combined = [...first.schedules, ...second.schedules];
+  assert.equal(combined.length, 20);
+  assert.equal(new Set(combined.map(s => s.id)).size, 20);
+  assert.ok(combined.every(s => s.selections.some(item => item.section.id === calculus.sections[0].id)));
+  assert.deepEqual(combined, [...combined].sort((a, b) =>
+    b.optionalIncluded - a.optionalIncluded || a.score - b.score || (a.id < b.id ? -1 : 1)));
+  const last = generateSchedules(courses, input, { discoveryOffset: 50, discoveryRevision: revision });
+  assert.equal(last.schedules.length, 10);
+  assert.equal(last.discovery!.nextCursor, null);
+  assert.ok(last.discovery!.uniqueValid > last.discovery!.retained);
+  assert.equal(first.discovery!.uniqueValid, second.discovery!.uniqueValid);
+  assert.throws(() => generateSchedules(courses, { ...input, weights: { ...input.weights, lateEvenings: 2 } },
+    { discoveryOffset: 10, discoveryRevision: revision }), /search changed/i);
+});
+
+test('discovery distinguishes exhausted, empty, and budget-limited searches', () => {
+  const a = course('A', [section('a'), section('a2')]);
+  const b = course('B', [section('b'), section('b2', [meeting('T')])]);
+  const input = request([a, b]);
+  const full = generateSchedules([a, b], input, { discoveryOffset: 0 });
+  assert.deepEqual(full.discovery, { upperBound: '4', evaluated: 4, uniqueValid: 2, retained: 2, nextCursor: null });
+  assert.equal(full.truncated, false);
+  const none = generateSchedules([a, b], { ...input, constraints: { ...input.constraints, daysOff: ['M'] } }, { discoveryOffset: 0 });
+  assert.equal(none.discovery!.uniqueValid, 0);
+  assert.equal(none.discovery!.nextCursor, null);
+  const huge = Array.from({ length: 12 }, (_, i) => course(`C${i}`, Array.from({ length: 100 }, (_, j) =>
+    section(`s${i}-${j}`, [meeting('M', 480 + i * 30, 505 + i * 30)]))));
+  const limited = generateSchedules(huge, request(huge), { discoveryOffset: 0, maxNodes: 1000 });
+  assert.equal(limited.discovery!.upperBound, '1000000000000000000000000');
+  assert.equal(limited.truncated, true);
+  assert.equal(limited.visited, 1000);
+  assert.ok(limited.discovery!.uniqueValid <= limited.discovery!.evaluated);
+  assert.ok(limited.discovery!.evaluated <= limited.visited);
+  const tiny = generateSchedules(huge, request(huge), { discoveryOffset: 0, maxNodes: 1 });
+  assert.equal(tiny.discovery!.nextCursor, null);
+  assert.equal(tiny.discovery!.uniqueValid, 0);
+});
+
+test('avoiding late evenings is independent from preferring later starts and the hard cutoff', () => {
+  const a = course('A', [
+    section('morning', [meeting('M', 540, 620)]),
+    section('afternoon', [meeting('M', 840, 920)]),
+    section('evening', [meeting('M', 1185, 1265)]),
+  ]);
+  const input = request([a]);
+  assert.equal(generateSchedules([a], input).schedules[0].selections[0].section.id, 'evening');
+  input.weights.lateEvenings = 4;
+  const ranked = generateSchedules([a], input).schedules;
+  assert.equal(ranked[0].selections[0].section.id, 'afternoon');
+  assert.equal(ranked.length, 3);
+  assert.equal(scoreSchedule([a.sections[2]], { ...input.weights, laterStarts: 0 }, []).breakdown.find(p => p.label === 'Meeting hours after 7 PM')?.amount, 8.333);
+  input.constraints.latestEnd = 19 * 60;
+  input.weights.lateEvenings = 0;
+  assert.equal(generateSchedules([a], input).schedules.length, 2);
+  input.constraints.lockedSectionIds = ['evening'];
+  assert.equal(generateSchedules([a], input).schedules.length, 0);
+});

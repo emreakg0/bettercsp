@@ -41,25 +41,31 @@ try {
     await page.goto(`${origin}/planner`);
     assert.equal(await page.locator('#rescue-panel input').first().isVisible(), false);
     assert.equal(await page.locator('.academic-profile input').first().isVisible(), false);
-    for (const [query, code] of [['Data Structures', '01:198:112'], ['Multivariable Calculus', '01:640:251'], ['Discrete Structures', '01:198:205']]) {
+    for (const [query, code] of [['Data Structures', '01:198:112'], ['Multivariable Calculus', '01:640:251'], ['Discrete Structures', '01:198:205'], ['College Writing', '01:355:101']]) {
       const course = await search(page, query, code);
       await course.getByRole('button', { name: 'Add course', exact: true }).click();
     }
-    assert.equal(await page.locator('.generator-choices > li').count(), 3);
+    assert.equal(await page.locator('.generator-choices > li').count(), 4);
     assert.equal(await page.getByLabel('Earliest start (Eastern)', { exact: true }).isVisible(), false);
     const result = await generate(page);
     assert.ok(result.request.choices.every(c => c.required));
     const savedBefore = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
     assert.deepEqual(savedBefore.sectionIds, []);
     assert.equal(await page.getByText('Class days', { exact: true }).first().isVisible(), true);
-    assert.equal(await page.getByText(/search steps ·/).isVisible(), false);
+    assert.equal(await page.getByText(/search steps\./).isVisible(), false);
     assert.equal(await page.locator('.generation-results .week-calendar').isVisible(), true);
     await page.getByRole('button', { name: 'Pin this schedule for comparison' }).click();
     await page.getByRole('button', { name: 'Next schedule →' }).click();
     assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
+    const current = page.locator('.generation-navigation strong');
+    assert.equal(await current.textContent(), 'Schedule 2 of 10');
+    await page.getByRole('button', { name: 'Explore more schedules' }).click();
+    await current.filter({ hasText: 'Schedule 2 of 20' }).waitFor();
+    for (let step = 0; step < 9; step++) await page.getByRole('button', { name: 'Next schedule →' }).click();
+    assert.equal(await current.textContent(), 'Schedule 11 of 20');
     await page.getByRole('button', { name: 'Apply this schedule', exact: true }).click();
-    await page.getByText('3 selected courses · 12 credits', { exact: true }).waitFor();
-    assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key)).sectionIds.length, 3);
+    await page.getByText('4 selected courses · 15 credits', { exact: true }).waitFor();
+    assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key)).sectionIds.length, 4);
     await page.getByRole('button', { name: 'Restore pre-generation schedule' }).click();
     await page.getByText('0 selected courses · 0 credits', { exact: true }).waitFor();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -71,7 +77,7 @@ try {
       assert.equal(alternative.request.choices.filter(c => !c.required).length, 1);
     }
     assert.deepEqual(errors, []);
-    assert.equal(result.schedules[0].selections.length, 3);
+    assert.equal(result.schedules[0].selections.length, 4);
     await context.close();
   }
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -91,6 +97,7 @@ try {
   const flexible = await generate(page);
   assert.equal(flexible.request.constraints.lockedSectionIds.includes(calculus.sections[0].id), false);
   // A preference change makes the preview stale; no result may be applied.
+  await page.getByText('Edit schedule preferences', { exact: true }).click();
   await page.getByLabel('Prefer days off', { exact: true }).uncheck();
   assert.equal(await page.getByRole('button', { name: 'Apply this schedule', exact: true }).isDisabled(), true);
   const registered = cs.sections.find(s => s.availability === 'open');
@@ -126,8 +133,13 @@ try {
   await page.unroute('**/api/planner/generate');
   const honors = calculus.sections.find(s => s.index === '15919');
   await seed(page, [honors]);
-  assert.equal(await page.locator('.saved-schedule .readiness-permission-required[open]').count(), 1);
+  const blocker = page.locator('.saved-schedule .readiness-permission-required[open]');
+  assert.equal(await blocker.count(), 1);
+  assert.match(await blocker.getByRole('link', { name: 'Rutgers permission instructions' }).getAttribute('href'), /math.sas.rutgers.edu/);
+  const routine = page.locator('.saved-schedule details').filter({ has: page.getByText(/^Needs verification ·/) });
+  assert.equal(await routine.locator(':scope > summary').filter({ hasText: 'Needs verification' }).count(), 1);
+  assert.equal(await routine.filter({ has: page.getByText(/^Confirm prerequisites, placement/) }).locator(':scope > p').first().isVisible(), false);
   await page.getByRole('button', { name: `Review recovery options for ${calculus.code}`, exact: true }).click();
   assert.equal(await page.locator('#rescue-panel').getAttribute('open'), '');
-  console.log('PASS: desktop/mobile three-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, contextual Rescue consent/undo, optional registration settings.');
+  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, contextual Rescue consent/undo, optional registration settings.');
 } finally { await browser.close(); }

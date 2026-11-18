@@ -194,3 +194,11 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .planner-workflow-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 24px; font-size: 12px; }
 .planner-workspace { margin-top: 18px; }
 .planner-schedule .generation-preferences { margin-top: 0; }
+
+.generation-navigation { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; margin: 8px 0; text-align: center; }
+.generation-navigation .schedule-nav-button { justify-content: center; min-height: 44px; padding: 8px; background: white; color: var(--accent); border: 1px solid var(--accent); }
+.generation-navigation strong { font-size: 13px; }
+.generation-results .generation-metrics { margin-top: 12px; }
+.generation-results article { margin: 12px 0; }
+.result-preferences > summary { padding: 10px 0; font-size: 13px; }
+.generation-navigation .schedule-nav-button:hover:not(:disabled) { background: var(--accent); color: white; }

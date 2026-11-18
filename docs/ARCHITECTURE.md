@@ -215,8 +215,19 @@ constraint search with smallest-domain ordering, lazy cached pair conflicts, for
 optional-course omission, and a bounded top-K set. It never materializes a Cartesian product.
 
 Limits: 12 total courses (including locks/retained manual selections), 2,000 filtered candidates,
-25,000 deterministic search steps by default (internal hard maximum 50,000), 10 retained results
-(API default; internal maximum 20), and at most 10,000 cached section-pair conflicts. Work accounting
+25,000 deterministic search steps by default (internal hard maximum 50,000) and at most 10,000
+cached section-pair conflicts. Legacy requests retain 10 results by default. The planner opts into
+discovery with `discoveryCursor: null`, returning ten results and a continuation when another batch
+exists. Continuations replay the same bounded search with a fixed shortlist of 60 and a fingerprint
+of the validated settings, counts, and ranked shortlist. The server only expands the requested ten
+results. This preserves ordering across stateless instances and uses no per-user server storage.
+Discovery skips ranking-based branch pruning to count unique valid timetables within the work budget.
+A bounded set deduplicates sorted registration IDs. A BigInt product of filtered domain sizes
+(including optional omission) reports an upper bound before conflict and cross-list checks. Complete
+combinations checked counts attempted final choices, including rejected ones, after partial-branch
+pruning. Discovery separately reports unique valid timetables found, options loaded, shortlist
+size, and whether search ran out of work or reached its budget. Requests beyond page one repeat
+the compute cost and cannot extend the original search budget. Work accounting
 includes forward-check candidates. Result truncation is explicit; truncated results are the best
 found, not a claim of global optimality or proof that no timetable exists. Course/index tie-breaking
 is deterministic. Duplicate schedule identity is the sorted set of registration IDs; distinct
@@ -241,10 +252,14 @@ included optional courses, then minimize the sum of user-weighted penalties, the
 | --- | --- |
 | Days off | Number of days with timed classes |
 | Later starts | 24 minus the mean first-class start hour across timed class days (0 for no timed classes) |
+| Late evenings | Total meeting hours after 7 PM Eastern, using scheduled end times |
 | Gaps | Total hours between scheduled classes on the same day |
 | Campus changes | Consecutive changes among known physical campus meetings, ignoring online/remote locations |
 | Commute days | Distinct days with known physical campus meetings |
 | Instructors | Sections without a case-insensitive substring match to any supplied preferred name |
+
+The planner defaults to evening weight 4. Turning it off uses weight 0, also the fallback for legacy
+requests. The latest acceptable class end remains an independent hard cutoff.
 
 Contributions are rounded to 0.001 points; lower total penalty is preferred. Missing instructor or
 location data limits these preferences, and unknown locations are disclosed. Campus changes are a
@@ -489,7 +504,7 @@ keep it current when implementation changes, without duplicating agent workflow 
 
 ### Planner UX browser regression
 
-`tests/planner-ux.mjs` exercises the three-course desktop/mobile workflow, manual preservation,
+`tests/planner-ux.mjs` exercises the four-course desktop/mobile workflow, manual preservation,
 saved drafts, stale previews, registration protection, Rescue approval/undo, and optional settings.
 It uses an externally available Playwright module and Chromium, without adding a dependency:
 

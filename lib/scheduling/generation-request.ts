@@ -38,7 +38,7 @@ export function parseGenerationRequest(value: unknown): GenerationRequest {
   return { choices, eligibility, constraints: { earliestStart, latestEnd, daysOff,
     excludedSectionIds: strings(hard.excludedSectionIds), lockedSectionIds: strings(hard.lockedSectionIds, 12),
     excludedCampuses: strings(hard.excludedCampuses, 20) },
-  weights: { daysOff: integer(weights.daysOff, 0, 10), laterStarts: integer(weights.laterStarts, 0, 10),
+  weights: { lateEvenings: weights.lateEvenings === undefined ? 0 : integer(weights.lateEvenings, 0, 10), daysOff: integer(weights.daysOff, 0, 10), laterStarts: integer(weights.laterStarts, 0, 10),
     gaps: integer(weights.gaps, 0, 10), campusChanges: integer(weights.campusChanges, 0, 10),
     commuteDays: integer(weights.commuteDays, 0, 10), instructors: integer(weights.instructors, 0, 10) },
   preferredInstructors: strings(input.preferredInstructors, 20) };

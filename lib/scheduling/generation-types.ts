@@ -10,7 +10,7 @@ export interface HardConstraints {
 }
 export interface PreferenceWeights {
   daysOff: number; laterStarts: number; gaps: number; campusChanges: number;
-  commuteDays: number; instructors: number;
+  commuteDays: number; instructors: number; lateEvenings?: number;
 }
 export interface GenerationRequest {
   choices: CourseChoice[]; constraints: HardConstraints; weights: PreferenceWeights;
@@ -21,6 +21,7 @@ export const defaultConstraints: HardConstraints = {
   earliestStart: 0, latestEnd: 1439, daysOff: [], excludedSectionIds: [], excludedCampuses: [], lockedSectionIds: [],
 };
 export const defaultWeights: PreferenceWeights = { daysOff: 2, laterStarts: 1, gaps: 2, campusChanges: 1, commuteDays: 2, instructors: 1 };
+export const eveningThreshold = 19 * 60;
 export interface ScheduleMetrics {
   classDays: number; earliestStart: number | null; gapMinutes: number; campusTransitions: number;
   commuteDays: number; meanFirstStart: number | null; unmatchedInstructors: number;
@@ -40,4 +41,8 @@ export interface CandidateReport {
 export interface GenerationResult {
   schedules: RankedSchedule[]; reports: CandidateReport[]; issues: string[];
   visited: number; completed: number; truncated: boolean;
+  discovery?: {
+    upperBound: string; evaluated: number; uniqueValid: number; retained: number;
+    nextCursor: string | null;
+  };
 }

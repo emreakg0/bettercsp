@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { evaluateEligibility } from '../eligibility/evaluate.ts';
 import { emptyProfile, type StudentProfile } from '../eligibility/types.ts';
 import type { Course } from '../catalog/types.ts';
@@ -77,16 +78,25 @@ function describe(found: Found, domains: Domain[], cached: Map<string, Selection
     omittedCourses: domains.filter(d => !found.picked.some(p => p.course.id === d.course.id)).map(d => d.course.code) };
 }
 
-// Bounded depth-first constraint search is new; Phase 2 supplies overlap checks, not enumeration.
-export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number; baseline?: { courseId: string; sectionId: string }[]; maxChanges?: number } = {}): GenerationResult {
+// Distinguish a changed replay from a catalog or server failure.
+export class StaleDiscoveryError extends Error {}
+
+export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number; baseline?: { courseId: string; sectionId: string }[]; maxChanges?: number; discoveryOffset?: number; discoveryRevision?: string } = {}): GenerationResult {
   const request = parseGenerationRequest(input);
   const maxNodes = Number.isFinite(limits.maxNodes) ? Math.max(1, Math.min(50000, Math.floor(limits.maxNodes!))) : 25000;
-  const maxResults = Number.isFinite(limits.maxResults) ? Math.max(1, Math.min(20, Math.floor(limits.maxResults!))) : 10;
+  const offset = limits.discoveryOffset;
+  const maxResults = offset !== undefined ? 60 : Number.isFinite(limits.maxResults) ? Math.max(1, Math.min(20, Math.floor(limits.maxResults!))) : 10;
   const { domains, reports, issues } = prepare(courses, request);
   const baseline = new Map(limits.baseline?.map(item => [item.courseId, item.sectionId]) ?? []);
   const maxChanges = Number.isFinite(limits.maxChanges) ? Math.max(0, Math.floor(limits.maxChanges!)) : Infinity;
   if (baseline.size) for (const domain of domains) domain.candidates.sort((a, b) => Number(b.section.id === baseline.get(domain.course.id)) - Number(a.section.id === baseline.get(domain.course.id)) || (a.section.id < b.section.id ? -1 : 1));
   const result: GenerationResult = { schedules: [], reports, issues, visited: 0, completed: 0, truncated: false };
+  // The same bounded traversal and retained ranking are replayed for each ten-result page.
+  const discovery = offset === undefined ? undefined : {
+    upperBound: domains.length ? domains.reduce((total, d) => total * BigInt(d.candidates.length + Number(!d.required)), BigInt(1)).toString() : '0',
+    evaluated: 0, uniqueValid: 0, retained: 0, nextCursor: null as string | null,
+  };
+  if (discovery) result.discovery = discovery;
   if (issues.length) return result;
   const groups = equivalentCourseGroups(domains.map(d => d.course));
   const required = domains.filter(d => d.required);
@@ -114,16 +124,20 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
   }
   function search(depth: number, optionalIncluded: number, changed: number): void {
     if (!spend() || changed > maxChanges) return;
-    if (!baseline.size && best.length === maxResults && optionalIncluded + domains.slice(depth).filter(d => !d.required).length < best[best.length - 1].optionalIncluded) return;
+    if (!discovery && !baseline.size && best.length === maxResults && optionalIncluded + domains.slice(depth).filter(d => !d.required).length < best[best.length - 1].optionalIncluded) return;
     if (depth === domains.length) {
       if (!picked.length) return;
       result.completed++;
       const id = picked.map(c => c.section.id).sort().join('|');
       if (seen.has(id)) return;
+      if (discovery) { seen.add(id); discovery.uniqueValid++; }
       const found = { ...scoreSchedule(picked.map(c => c.section), request.weights, request.preferredInstructors), id, picked: [...picked], optionalIncluded, changed };
       if (best.length < maxResults || compare(found, best[best.length - 1]) < 0) {
         best.push(found); best.sort(compare); seen.add(id);
-        if (best.length > maxResults) seen.delete(best.pop()!.id);
+        if (best.length > maxResults) {
+          const dropped = best.pop()!;
+          if (!discovery) seen.delete(dropped.id);
+        }
       }
       return;
     }
@@ -132,18 +146,30 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
       // Count rejected branches as work too, so impossible instances remain bounded.
       if (!spend()) return;
       const nextChanges = changed + Number(baseline.has(domain.course.id) && baseline.get(domain.course.id) !== candidate.section.id);
-      if (nextChanges > maxChanges || !compatible(candidate)) continue;
+      if (nextChanges > maxChanges) continue;
+      const matches = compatible(candidate);
+      if (discovery && !result.truncated && depth === domains.length - 1) discovery.evaluated++;
+      if (!matches) continue;
       picked.push(candidate);
       const feasible = domains.slice(depth + 1).every(d => !d.required || d.candidates.some(compatible));
       if (feasible) search(depth + 1, optionalIncluded + Number(!domain.required), nextChanges);
       picked.pop();
     }
-    if (!domain.required && !result.truncated) search(depth + 1, optionalIncluded, changed + Number(baseline.has(domain.course.id)));
+    if (!domain.required && !result.truncated) {
+      if (discovery && picked.length && result.visited < maxNodes && depth === domains.length - 1) discovery.evaluated++;
+      search(depth + 1, optionalIncluded, changed + Number(baseline.has(domain.course.id)));
+    }
   }
   search(0, 0, 0);
   const cache = new Map<string, Selection>();
-  result.schedules = best.map(found => describe(found, domains, cache, request.eligibility?.profile ?? emptyProfile));
-  if (!result.schedules.length) result.issues.push(result.truncated
+  if (discovery && offset !== undefined) {
+    discovery.retained = best.length;
+    const revision = createHash('sha256').update(JSON.stringify([request, discovery, best.map(({ id, score }) => [id, score])])).digest('hex');
+    if (limits.discoveryRevision && limits.discoveryRevision !== revision) throw new StaleDiscoveryError('The schedule search changed. Generate schedules again.');
+    if (offset + 10 < best.length) discovery.nextCursor = `${offset + 10}:${revision}`;
+  }
+  result.schedules = (offset === undefined ? best : best.slice(offset, offset + 10)).map(found => describe(found, domains, cache, request.eligibility?.profile ?? emptyProfile));
+  if (!best.length) result.issues.push(result.truncated
     ? 'No schedule found within the search budget. Reduce the course set or narrow sections and try again.'
     : 'No compatible schedule exists under these constraints. Review locks, cross-listed duplicates, hours, days off, or make a course optional.');
   return result;
