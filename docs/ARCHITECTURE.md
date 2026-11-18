@@ -352,6 +352,16 @@ are extended rather than duplicated. Calendar blocks link to selected section de
 replace preserve unrelated choices. The Course Explorer remains at `/`. Existing Geist typography,
 spacing, and components are retained; accent colors now use Rutgers scarlet (`#cc0033`).
 Schedule comparison, preference controls, readiness review, and explicit-approval Rescue are implemented.
+The primary workspace now uses one “Add course” action, a persistent generate action, and separate
+schedule-options/saved-schedule views. Search results scroll within the course pane. Four common
+preference toggles map to the existing weights; numeric weights, hard constraints, exclusions, and
+instructors remain under Advanced Preferences. Diagnostics and scoring explanations are collapsed.
+Academic information and Rescue appear below the workspace; failed/permission/verification reports
+also expose a contextual Rescue action. Serious readiness findings remain visible in previews and saves.
+Candidate choices remain session-only. Restored/manual selections become candidates with “Keep section”
+enabled; this is translated to the existing locked-section request field without changing the API or
+engine. Unchecking it explicitly permits generation to rearrange that section, while registered/manual
+locks still take precedence. Saved ID/report/lock formats and undo signatures remain unchanged.
 Use focused panels and progressive disclosure; avoid cluttered dashboards and unnecessary animation.
 Keep domain results outside rendering logic. Show loading, empty, failure, stale, and partial-result states.
 Provide keyboard controls, visible focus, semantic labels, accessible list alternatives to calendar drag,
@@ -476,3 +486,16 @@ Sources inspected: `AGENTS.md`, `CLAUDE.md`, `README.md`, `package.json`, `tscon
 Day-code source: [official Rutgers SOC day filters](https://classes.rutgers.edu/soc/) (verified 2026-11-17).
 This new reference consolidates verified baseline and explicitly requested design in one place;
 keep it current when implementation changes, without duplicating agent workflow rules.
+
+### Planner UX browser regression
+
+`tests/planner-ux.mjs` exercises the three-course desktop/mobile workflow, manual preservation,
+saved drafts, stale previews, registration protection, Rescue approval/undo, and optional settings.
+It uses an externally available Playwright module and Chromium, without adding a dependency:
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs CHROME_PATH=/path/to/chrome PLANNER_URL=http://localhost:3000 node tests/planner-ux.mjs
+```
+
+Start the production app first. If Playwright is already resolvable and its browser installed, omit
+the module/browser overrides. `npm test` continues to run the independent engine tests.

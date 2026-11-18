@@ -18,8 +18,7 @@ export default async function PlannerPage({ searchParams }: {
   return <main className="shell planner-shell">
     <header className="intro"><h1>Build your semester.</h1></header>
     <div className="catalog-context"><span>{catalogSource.label}</span><Link className="back-link" href="/">Browse Course Explorer ↗</Link></div>
-    <aside className="snapshot-note"><strong>Planning from a snapshot · capture time unknown</strong>
-      <p>Seat labels reflect a snapshot, not current availability. Timetable conflicts concern meeting overlaps; eligibility restrictions concern who may enroll. Review registration readiness and verify seats in Rutgers SOC and WebReg. Adding or applying a section does not register you or reserve a seat.</p></aside>
+    <p className="muted planner-source-note">Seat labels use a snapshot. Verify availability and eligibility with Rutgers; applying a plan does not register you.</p>
     <PlannerWorkspace sourceId={catalogSource.id} courses={result.courses.map(plannerCourse)}>
       <div id="planner-search"><SearchControls pathname="/planner" query={query} subject={subject} subjects={catalog.subjects} /></div>
       <div className="results-heading"><h2>Find your courses</h2><p role="status">{result.total.toLocaleString('en-US')} {result.total === 1 ? 'course' : 'courses'}</p></div>

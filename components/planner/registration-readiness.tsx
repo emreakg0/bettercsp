@@ -14,7 +14,7 @@ export function ReadinessFindings({ findings }: { findings: EligibilityFinding[]
     </div>)}</details>
   </li>)}</ul>;
 }
-export function RegistrationReadiness({ selections, profile }: { selections: Selection[]; profile: StudentProfile }) {
+export function RegistrationReadiness({ selections, profile, onRescue }: { selections: Selection[]; profile: StudentProfile; onRescue?: () => void }) {
   if (!selections.length) return null;
   const assessments = selections.map(selection => ({ ...selection, result: evaluateEligibility(selection.course, selection.section, profile) })).sort((a, b) => eligibilityPriority.indexOf(a.result.status) - eligibilityPriority.indexOf(b.result.status));
   const actionable = assessments.filter(a => a.result.status !== 'no-known-blocker').length;
@@ -25,6 +25,7 @@ export function RegistrationReadiness({ selections, profile }: { selections: Sel
       return <details className={`readiness-section readiness-${result.status}`} key={section.id} open={result.status === 'permission-required' || result.status === 'potentially-ineligible'}>
         <summary><strong>{course.code} · section {section.number} · index {section.index}</strong><span>{statusLabels[result.status]}</span></summary>
         {!!unresolved.length && <ReadinessFindings findings={unresolved} />}
+        {onRescue && (result.status === 'permission-required' || result.status === 'potentially-ineligible') && <button className="text-button" onClick={onRescue}>Review recovery options for {course.code}</button>}
         {!!met.length && <details><summary>Checks with no known blocker</summary><ReadinessFindings findings={met} /></details>}
         {result.status === 'no-known-blocker' && <p className="muted">No blocker was found by the supported checks. This is not guaranteed enrollment, verified eligibility, or a reserved seat; unmodeled rules may still apply.</p>}
       </details>;

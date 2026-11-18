@@ -39,7 +39,7 @@ export function RescuePanel({ sourceId, draft, profile = emptyProfile, settings,
   }
   return <details className="rescue-panel" id="rescue-panel"><summary>Rescue schedule · protect what already works</summary>
     <p>One section failed? Start with the smallest repair. No proposed change is applied without your approval.</p>
-    <p className="muted">Registered means self-reported, not verified by WebReg. Original courses, registered sections, and manual locks stay protected. Hard constraints and preference weights come from the generator controls below.</p>
+    <p className="muted">Registered means self-reported, not verified by WebReg. Original courses, registered sections, and manual locks stay protected. Preferences and hard constraints come from the course workspace above.</p>
     <h3>Protected sections</h3><p className="muted">{protections.length ? draft.selections.filter(s => protections.includes(s.section.id)).map(s => `${s.course.code} · index ${s.section.index}${draft.statuses[s.section.id] === 'registered' ? ' (registered self-report)' : ' (locked)'}`).join('; ') : 'No registered or locked sections reported.'}</p>
     <details><summary>Current section restrictions and official next steps</summary><RegistrationReadiness selections={draft.selections} profile={profile} /></details>
     <h3>What needs attention?</h3>

@@ -166,3 +166,31 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .registration-report { display: block; font-size: 12px; margin: 12px 0; }.registration-report select { margin-top: 6px; }
 .protection-overrides { border-left: 2px solid var(--accent); padding-left: 16px; margin-top: 18px; font-size: 13px; }
 @media (max-width: 760px) { .rescue-panel { padding: 12px; } }
+
+/* Planner workflow reuses existing form, disclosure, and calendar styles. */
+.planner-source-note { font-size: 12px; margin-block: 12px; }
+.course-choice-heading { display: flex; gap: 16px; justify-content: space-between; align-items: center; }
+.course-choice-heading .button { flex-shrink: 0; }
+.planner-course > details > summary, .generator-choices summary, .registration-settings > summary { min-height: 44px; padding: 10px 0; font-size: 12px; }
+.generator-choices small { display: block; color: var(--muted); margin-top: 4px; }
+.generator-choices details { max-width: 100%; }
+.generator-choices details label { display: flex; }
+.schedule-view-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.schedule-view-tabs button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: white; font-size: 12px; }
+.schedule-view-tabs button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.planner-workspace .schedule-generator { margin-top: 18px; }
+.planner-workspace .generation-results { margin-top: 0; }
+.planner-secondary { margin-top: 24px; }
+.registration-settings { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 8px; }
+.registration-settings .academic-profile { border: 0; margin-top: 0; }
+.saved-schedule .results-heading { flex-wrap: wrap; }
+.eligibility-settings { font-size: 12px; margin-block: 16px; }
+@media (min-width: 1001px) { .schedule-view-tabs { position: sticky; top: 0; background: var(--background); z-index: 3; padding-block: 8px; } }
+
+.planner-search-results { max-height: 360px; overflow-y: auto; padding-right: 8px; margin-top: 8px; }
+.planner-search-results:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.planner-search-results .planner-course:first-child { border-top: 0; }
+
+.planner-workflow-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 24px; font-size: 12px; }
+.planner-workspace { margin-top: 18px; }
+.planner-schedule .generation-preferences { margin-top: 0; }

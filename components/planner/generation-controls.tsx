@@ -15,7 +15,11 @@ export function GenerationControls({ value, onChange, campuses }: {
   value: GenerationSettings; onChange: (value: GenerationSettings) => void; campuses: string[];
 }) {
   function hard(patch: Partial<HardConstraints>): void { onChange({ ...value, hard: { ...value.hard, ...patch } }); }
-  return <details className="generation-preferences"><summary>Hours, days off & ranking preferences</summary>
+  return <section className="generation-preferences" aria-label="Schedule preferences">
+    <h3>Preferences <span className="muted">· optional</span></h3>
+    <div className="generation-checks">{weights.slice(0, 4).map(([key, label]) => <label key={key}>
+      <input type="checkbox" checked={value.weights[key] > 0} onChange={e => onChange({ ...value, weights: { ...value.weights, [key]: e.target.checked ? (defaultWeights[key] || 2) : 0 } })} />{key === 'laterStarts' ? 'Avoid early mornings' : key === 'gaps' ? 'Minimize schedule gaps' : label}</label>)}</div>
+    <details><summary>Advanced Preferences</summary>
     <div className="generation-fields">
       <label>Earliest start (Eastern)<input type="time" required value={clockValue(value.hard.earliestStart)} onChange={e => {
         if (e.target.value) { const [h, m] = e.target.value.split(':').map(Number); hard({ earliestStart: h * 60 + m }); }
@@ -39,5 +43,6 @@ export function GenerationControls({ value, onChange, campuses }: {
     <label>Preferred instructors · one name or surname per line<textarea rows={2} maxLength={1500} value={value.instructors}
       onChange={e => onChange({ ...value, instructors: e.target.value })} placeholder="Instructor name" /></label>
     <p className="muted">Optional-course coverage ranks first. Lower weighted penalties rank next. Campus changes count transitions between known physical campuses; they do not estimate bus travel time. Unknown instructor/location data limits these preferences.</p>
-  </details>;
+    </details>
+  </section>;
 }

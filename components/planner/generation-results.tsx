@@ -8,9 +8,8 @@ import { WeeklyCalendar } from './weekly-calendar';
 
 function Metrics({ schedule }: { schedule: RankedSchedule }) {
   const m = schedule.metrics;
-  return <dl className="generation-metrics"><div><dt>Preference penalty · lower is better</dt><dd>{schedule.score}</dd></div>
-    <div><dt>Class days</dt><dd>{m.classDays}</dd></div><div><dt>Earliest class</dt><dd>{m.earliestStart === null ? 'No timed meetings' : formatTime(m.earliestStart)}</dd></div>
-    <div><dt>Scheduled gaps</dt><dd>{m.gapMinutes} minutes</dd></div><div><dt>Campus transitions · proxy</dt><dd>{m.campusTransitions}</dd></div>
+  return <dl className="generation-metrics"><div><dt>Class days</dt><dd>{m.classDays}</dd></div><div><dt>Earliest class</dt><dd>{m.earliestStart === null ? 'No timed meetings' : formatTime(m.earliestStart)}</dd></div>
+    <div><dt>Time between classes</dt><dd>{m.gapMinutes} minutes</dd></div><div><dt>Campus changes · count</dt><dd>{m.campusTransitions}</dd></div>
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
@@ -21,13 +20,9 @@ export function GenerationResults({ result, stale, onApply, canApply, profile }:
   const schedule = result.schedules[index];
   return <section className="generation-results" aria-label="Generated schedules">
     <h3>{result.schedules.length} ranked {result.schedules.length === 1 ? 'schedule' : 'schedules'}</h3>
-    <p className="muted">{result.visited.toLocaleString()} search steps · {result.completed.toLocaleString()} combinations scored. {result.truncated ? 'Search budget reached: these are the best found, not guaranteed global optima.' : 'Search completed; showing the best retained alternatives.'}</p>
+    {result.truncated && <p role="status" className="snapshot-note">Search limit reached. These are the best options found so far; a better schedule may exist.</p>}
     {stale && <p role="status" className="snapshot-note">Your choices, preferences, academic information, locks, or manual schedule changed. Generate again before applying.</p>}
     {!!result.issues.length && <ul className="generation-notes">{result.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
-    <details><summary>Candidate sections and exclusions</summary>{result.reports.map(report => <p className="muted" key={report.courseId}>
-      {report.code}: {report.candidates} of {report.total} sections available to the solver.
-      {Object.entries(report.exclusions).map(([reason, count]) => ` ${reason}: ${count}.`).join('')}
-    </p>)}{result.reports.map(report => !!report.eligibilityExclusions?.length && <details key={report.courseId}><summary>{report.code}: excluded eligibility mismatches (up to 20 shown)</summary>{report.eligibilityExclusions.map(item => <div key={item.index}><h4>Index {item.index}</h4><ReadinessFindings findings={item.findings} /></div>)}</details>)}</details>
     {!schedule && <p className="muted">No schedule was found in this search. Review the reasons above, then adjust a hard constraint, unlock a section if appropriate, or change your course choices and generate again.</p>}
     {schedule && <>
       <nav className="generation-navigation" aria-label="Generated schedule navigation">
@@ -35,10 +30,15 @@ export function GenerationResults({ result, stale, onApply, canApply, profile }:
         <span>Schedule {index + 1} of {result.schedules.length}</span>
         <button className="text-button" disabled={index === result.schedules.length - 1} onClick={() => setIndex(index + 1)}>Next schedule →</button>
       </nav>
-      <p>{index === 0 ? 'Top ranked among the searched combinations' : `Alternative ${index + 1}`}: includes {schedule.optionalIncluded} optional {schedule.optionalIncluded === 1 ? 'course' : 'courses'}, then minimizes your weighted penalty. Ties use registration IDs.</p>
+      <p>{index === 0 ? 'Best match for your preferences among the schedules checked.' : 'Another option for your week.'}</p>
       <Metrics schedule={schedule} />
-      <details><summary>Why this score?</summary><ul className="generation-notes">{schedule.breakdown.map(part => <li key={part.label}>{part.label}: {part.amount} penalty points</li>)}</ul>
-        <p className="muted">Days and hours are weighted using the controls above. Daily start times are averaged across class days. Eligibility, honors status, and snapshot seats never change this score.</p></details>
+      <p className="muted">Preview only · snapshot seats and eligibility still need Rutgers verification.</p>
+      <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
+      {schedule.selections.map(selection => <article id={`generated-${selection.section.index}`} key={selection.section.id}>
+        <h4>{selection.course.code} · {selection.course.title}</h4>
+        <p className="muted">Section {selection.section.number} · {selection.section.instructors.join(', ') || 'Instructor not listed'}</p>
+        <details><summary>Section details and registration notes</summary><SectionList sections={[selection.section]} /></details>
+      </article>)}
       {!!schedule.omittedCourses.length && <p>Optional courses omitted: {schedule.omittedCourses.join(', ')}.</p>}
       <RegistrationReadiness selections={schedule.selections} profile={profile} />
       <div className="generation-actions"><button className="text-button" onClick={() => setCompared(index)}>Pin this schedule for comparison</button>
@@ -54,13 +54,20 @@ export function GenerationResults({ result, stale, onApply, canApply, profile }:
         <p className="muted">Indexes removed from the pinned alternative: {result.schedules[compared].selections.filter(s => !schedule.selections.some(p => p.section.id === s.section.id)).map(s => `${s.course.code}: ${s.section.index}`).join(', ') || 'None'}.</p>
         <button className="text-button" onClick={() => setCompared(null)}>Clear comparison</button>
       </div>}
-      <p className="muted">Preview only. Apply updates the manual planner and local save. Unrelated manual selections and locked sections are preserved. Review registration notes before applying.</p>
-      <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
-      <details className="generation-limitations" open><summary>Registration review & limitations</summary><ul className="generation-notes">{schedule.limitations.map(text => <li key={text}>{text}</li>)}</ul></details>
+      <p className="muted">Preview only. Apply updates the manual planner and local save. Kept, locked, registered, and unrelated sections are preserved. Review registration notes before applying.</p>
+      <details className="generation-limitations"><summary>Registration review & limitations</summary><ul className="generation-notes">{schedule.limitations.map(text => <li key={text}>{text}</li>)}</ul></details>
       <details><summary>Course prerequisites and source registration notes</summary><dl>{schedule.restrictions.map((notice, i) => <div key={i}><dt>{notice.courseCode} · index {notice.sectionIndex} · {notice.field}</dt><dd>{notice.text}</dd></div>)}</dl></details>
-      {schedule.selections.map(selection => <article id={`generated-${selection.section.index}`} key={selection.section.id}>
-        <h4>{selection.course.code} · {selection.course.title}</h4><SectionList sections={[selection.section]} />
-      </article>)}
+      <details><summary>How schedules were ranked & search details</summary>
+    <p className="muted">{result.visited.toLocaleString()} search steps · {result.completed.toLocaleString()} combinations scored. {result.truncated ? 'Search budget reached: these are the best found, not guaranteed global optima.' : 'Search completed; showing the best retained alternatives.'}</p>
+      <p>Preference score: {schedule.score}. Includes {schedule.optionalIncluded} optional courses. Optional-course coverage ranks first, then weighted preferences; ties use registration IDs.</p>
+      <details><summary>Why this score?</summary><ul className="generation-notes">{schedule.breakdown.map(part => <li key={part.label}>{part.label}: {part.amount} penalty points</li>)}</ul>
+        <p className="muted">Days and hours are weighted using the controls above. Daily start times are averaged across class days. Eligibility, honors status, and snapshot seats never change this score.</p></details>
+      </details>
     </>}
+    <details><summary>Candidate sections and exclusions</summary>
+{result.reports.map(report => <p className="muted" key={report.courseId}>
+      {report.code}: {report.candidates} of {report.total} sections available to the solver.
+      {Object.entries(report.exclusions).map(([reason, count]) => ` ${reason}: ${count}.`).join('')}
+    </p>)}{result.reports.map(report => !!report.eligibilityExclusions?.length && <details key={report.courseId}><summary>{report.code}: excluded eligibility mismatches (up to 20 shown)</summary>{report.eligibilityExclusions.map(item => <div key={item.index}><h4>Index {item.index}</h4><ReadinessFindings findings={item.findings} /></div>)}</details>)}    </details>
   </section>;
 }
