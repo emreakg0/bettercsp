@@ -32,10 +32,9 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
     }
   }
   return <section className="generation-results" aria-label="Generated schedules">
-    {result.truncated && <p role="status" className="snapshot-note">{progress?.sessionLimited
+    {result.truncated && (progress?.sessionLimited || !progress?.resumable) && <p role="status" className="snapshot-note">{progress?.sessionLimited
       ? 'This search reached its session limit. Unexplored combinations remain.'
-      : progress?.resumable ? 'Search paused at the work limit. Later batches may contain better schedules.'
-        : 'Search limit reached. Ranking covers the options found so far. A better schedule may exist.'}</p>}
+      : 'Search limit reached. Ranking covers the options found so far. A better schedule may exist.'}</p>}
     {stale && <p role="status" className="snapshot-note">Your choices, preferences, academic information, locks, or manual schedule changed. Generate again before applying.</p>}
     {!!result.issues.length && <ul className="generation-notes">{result.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
     {!schedule && <p className="muted">{progress?.nextCursor
