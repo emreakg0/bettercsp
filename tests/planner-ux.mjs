@@ -11,14 +11,21 @@ const academicKey = 'bettercsp:academic-profile:v1';
 const catalog = normalizeCatalog(JSON.parse(readFileSync('data/rutgers/spring-2027.json', 'utf8')), { id: '2027-1-NB', label: 'Spring 2027', file: '', capturedAt: null });
 const calculus = catalog.find(c => c.code === '01:640:251');
 const cs = catalog.find(c => c.code === '01:198:112');
+const discrete = catalog.find(c => c.code === '01:198:205');
+async function show(page, destination) {
+  const tab = page.getByRole('navigation', { name: 'Planner workspace' }).getByRole('button', { name: destination, exact: true });
+  if (await tab.getAttribute('aria-current') !== 'page') await tab.click();
+  await page.locator('.planner-tabs button[aria-current="page"]').filter({ hasText: destination }).waitFor();
+}
 async function search(page, query, code) {
-  if (await page.getByRole('button', { name: 'Courses', exact: true }).isVisible()) await page.getByRole('button', { name: 'Courses', exact: true }).click();
+  await show(page, 'Build');
   await page.getByLabel('Find a course', { exact: true }).fill(query);
   const course = page.locator('.planner-course').filter({ has: page.locator('.course-code', { hasText: code }) });
   await course.waitFor();
   return course;
 }
 async function generate(page) {
+  await show(page, 'Build');
   const response = page.waitForResponse(r => r.url().endsWith('/api/planner/generate') && r.request().method() === 'POST');
   await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
   const answer = await response;
@@ -31,23 +38,20 @@ async function generate(page) {
 async function seed(page, selections, statuses = {}, locks = []) {
   await page.goto(origin);
   await page.evaluate(([key, ids, statuses, locks]) => localStorage.setItem(key, JSON.stringify({ version: 1, sourceId: '2027-1-NB', sectionIds: ids, registrationStatuses: statuses, lockedSectionIds: locks })), [key, selections.map(s => s.id), statuses, locks]);
-  await page.goto(`${origin}/planner`);
-  const calendar = page.getByRole('button', { name: /^Calendar \(/ });
-  if (await calendar.isVisible()) await calendar.click();
+  await page.goto(`${origin}/planner?view=schedule`);
   await page.locator(`#selected-${selections[0].index}`).waitFor();
 }
 try {
   for (const width of [1440, 375]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await context.newPage();
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${origin}/planner`);
     assert.equal(await page.locator('#rescue-panel input').first().isVisible(), false);
     assert.equal(await page.locator('.academic-profile input').first().isVisible(), false);
-    const rescueEntry = page.locator('#rescue-entry');
+    const rescueEntry = page.getByRole('navigation', { name: 'Planner workspace' }).getByRole('button', { name: 'Rescue', exact: true });
     await page.locator('.planner-course button:not(:disabled)').first().waitFor();
     await rescueEntry.press('Enter');
-    await page.getByLabel('What went wrong with registration?').selectOption('closed');
     await page.getByText('Rescue needs a plan', { exact: false }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Find minimum-change repairs' }).count(), 0);
     await page.getByRole('button', { name: 'Find the affected course' }).click();
@@ -142,6 +146,7 @@ try {
     await page.getByText('0 selected courses · 0 credits', { exact: true }).waitFor();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     if (width === 1440) {
+      await show(page, 'Build');
       const optional = page.locator('.generator-choices > li').last();
       await optional.locator('summary').click();
       await optional.getByLabel('Required course', { exact: true }).uncheck();
@@ -162,19 +167,104 @@ try {
         await generate(page);
         await current.filter({ hasText: 'Schedule 1 of 1 loaded' }).waitFor();
         await next.click();
-        const message = { expired: /continuation expired or changed/, exhausted: /Search exhausted. All shortlisted/, limited: /reached its session limit/ }[outcome];
+        const message = { expired: /continuation expired or changed/, exhausted: /Search finished. All shortlisted/, limited: /reached its session limit/ }[outcome];
         await page.getByText(message).first().waitFor();
         assert.equal(await current.textContent(), 'Schedule 1 of 1 loaded');
         assert.equal(await next.isDisabled(), true);
         await page.unroute('**/api/planner/generate', handler);
       }
+      const partial = async route => {
+        const cursor = route.request().postDataJSON().discoveryCursor;
+        const items = !cursor ? result.schedules.slice(0, 1) : cursor === 'next-page' ? result.schedules.slice(1, 3) : [];
+        await route.fulfill({ json: { ...result, schedules: items, discovery: { ...result.discovery,
+          nextCursor: !cursor ? 'empty-page' : cursor === 'empty-page' ? 'next-page' : null, exhausted: cursor === 'next-page', sessionLimited: false } } });
+      };
+      await page.route('**/api/planner/generate', partial);
+      await generate(page);
+      await next.click();
+      await page.getByText('The last batch found no new schedules.', { exact: false }).waitFor();
+      assert.equal(await current.textContent(), 'Schedule 1 of 1 loaded');
+      assert.equal(await next.isEnabled(), true);
+      await next.click();
+      await current.filter({ hasText: 'Schedule 2 of 3 loaded' }).waitFor();
+      await previous.click();
+      assert.equal(await current.textContent(), 'Schedule 1 of 3 loaded');
+      await page.unroute('**/api/planner/generate', partial);
     }
+
+    const discreteSection = discrete.sections.find(s => s.index === '14411');
+    await seed(page, [discreteSection]);
+    const savedDiscrete = await page.evaluate(key => localStorage.getItem(key), key);
+    const alternativeFailure = route => route.fulfill({ status: 503, json: { error: 'Could not check alternatives.' } });
+    await page.route('**/api/planner/rescue', alternativeFailure);
+    await page.getByRole('button', { name: 'Find a replacement for 01:198:205', exact: true }).press('Enter');
+    const fallback = page.getByRole('region', { name: 'Section and course alternatives' });
+    await fallback.getByRole('alert').getByText('Could not check alternatives. Your schedule is unchanged.', { exact: true }).waitFor();
+    await page.waitForFunction(() => document.activeElement?.id === 'planner-rescue-heading');
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedDiscrete);
+    await page.unroute('**/api/planner/rescue', alternativeFailure);
+    await fallback.getByRole('button', { name: 'Retry alternatives' }).click();
+    await fallback.getByRole('heading', { name: 'Other sections of 01:198:205' }).waitFor();
+    assert.equal(await page.getByLabel('Which section is affected?').inputValue(), discreteSection.index);
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedDiscrete);
+    assert.match(page.url(), /view=rescue&section=14411/);
+    await page.goBack();
+    await page.getByRole('heading', { name: /^My Schedule/ }).waitFor();
+    assert.equal(await fallback.isVisible(), false);
+    await page.goForward();
+    await fallback.getByRole('heading', { name: 'Other sections of 01:198:205' }).waitFor();
+    await fallback.getByRole('button', { name: /^Review section/ }).first().click();
+    await fallback.getByRole('heading', { name: 'Review before applying' }).waitFor();
+    assert.equal(await fallback.getByRole('button', { name: 'Apply approved replacement', exact: true }).isDisabled(), true);
+    const copy = fallback.getByRole('button', { name: /^Copy registration index/ }).first();
+    const copied = (await copy.getAttribute('aria-label')).slice(-5);
+    await copy.click();
+    await fallback.getByText(`Copied ${copied}.`, { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), copied);
+    await fallback.getByLabel('I approve this planner change', { exact: false }).check();
+    await fallback.getByRole('button', { name: 'Apply approved replacement' }).click();
+    await page.getByText('Alternative applied to your planner.', { exact: false }).waitFor();
+    assert.equal(await page.locator(`#selected-${copied} .registration-report select`).inputValue(), 'planned');
+    await page.getByRole('button', { name: 'Undo applied course alternative' }).click();
+    await page.locator(`#selected-${discreteSection.index}`).waitFor();
+    await page.goto(`${origin}/planner?q=01%3A198%3A205`);
+    await page.getByRole('region', { name: 'Course search results' }).getByText('01:198:205', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Find a course', { exact: true }).inputValue(), '01:198:205');
+    await show(page, 'My Schedule');
+    await page.goBack();
+    await page.getByRole('region', { name: 'Course search results' }).waitFor();
+    await page.waitForFunction(() => document.activeElement?.id === 'course-search');
+    const restored = await generate(page);
+    assert.deepEqual(restored.request.constraints.lockedSectionIds, []);
+    assert.ok(restored.schedules.length > 1);
+    assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedDiscrete);
+    await page.getByLabel(`Keep section ${discreteSection.number} for 01:198:205`, { exact: true }).check();
+    const single = await generate(page);
+    assert.deepEqual(single.request.constraints.lockedSectionIds, [discreteSection.id]);
+    await page.getByText('Every course is fixed to a section.', { exact: true }).waitFor();
+    const releasePins = page.waitForResponse(r => r.url().endsWith('/api/planner/generate') && !r.request().postDataJSON()?.discoveryCursor);
+    await page.getByRole('button', { name: 'Try other sections', exact: true }).click();
+    assert.deepEqual((await releasePins).request().postDataJSON().constraints.lockedSectionIds, []);
+    await current.filter({ hasText: /Schedule 1 of [2-9] loaded/ }).waitFor();
+    if (width === 1440) {
+      await page.getByText('Edit schedule preferences', { exact: true }).click();
+      await page.getByText('Advanced Preferences', { exact: true }).click();
+      await page.getByText('Section and campus exclusions', { exact: true }).click();
+      await page.getByLabel(/Exclude registration indexes/).fill(discrete.sections.filter(s => s !== discreteSection).map(s => s.index).join(','));
+      const constrained = await generate(page);
+      assert.equal(constrained.schedules.length, 1);
+      await page.getByText('Only one compatible timetable matches these choices and constraints.', { exact: true }).waitFor();
+      assert.equal(await next.isDisabled(), true);
+    }
+
     const [failed, ...registered] = ['14315', '14411', '14758', '15897'].map(index => catalog.flatMap(c => c.sections).find(s => s.index === index));
     await seed(page, [failed, ...registered], { [failed.id]: 'failed', ...Object.fromEntries(registered.map(s => [s.id, 'registered'])) }, [registered[0].id]);
-    await page.getByRole('button', { name: 'Get registration help for 01:198:112', exact: true }).click();
-    const fallback = page.getByRole('region', { name: 'Degree-aware Rescue' });
-    const findCourses = fallback.getByRole('button', { name: 'Find another course that advances my degree', exact: true });
-    assert.equal(await findCourses.count(), 0);
+    const protectedDraft = await generate(page);
+    assert.deepEqual([...protectedDraft.request.constraints.lockedSectionIds].sort(), registered.map(s => s.id).sort());
+    assert.ok(protectedDraft.schedules.every(s => registered.every(section => s.selections.some(item => item.section.id === section.id))));
+    await show(page, 'My Schedule');
+    await page.getByRole('button', { name: 'Find a replacement for 01:198:112', exact: true }).click();
+    await fallback.getByRole('heading', { name: 'Replacement options', exact: true }).waitFor();
     const academic = page.locator('.academic-profile');
     await academic.locator(':scope > summary').click();
     await academic.getByLabel('Rutgers school', { exact: true }).fill('SAS');
@@ -183,40 +273,38 @@ try {
     await academic.getByLabel('Program or catalog year').fill('2026');
     await academic.getByLabel('Courses in progress').fill('01:640:151');
     const update = academic.getByRole('button', { name: 'Update profile' });
-    await update.click();
-    await fallback.getByText('Plan 01:198:112 for a later term', { exact: true }).press('Enter');
-    await fallback.getByText(/Postponing 01:198:112 could delay 01:198:211/).waitFor();
-    await fallback.getByRole('button', { name: 'Add 01:198:112 to planned future courses' }).click();
-    assert.equal(await academic.getByLabel('Planned future courses').inputValue(), '01:198:112');
-    await update.click();
-    async function findCoursesAndConfirmPrivacy() {
-      const search = page.waitForResponse(r => r.url().endsWith('/api/planner/rescue') && r.request().postDataJSON()?.courseFallback);
-      await findCourses.press('Enter');
+    async function findCoursesAndConfirmPrivacy(trigger) {
+      const search = page.waitForResponse(r => r.url().endsWith('/api/planner/rescue') && r.request().postDataJSON()?.courseFallback?.candidateCodes.length);
+      await trigger();
       const answer = await search;
       assert.equal(answer.status(), 200);
       const request = answer.request().postDataJSON();
       for (const field of ['inProgressCourses', 'plannedCourses', 'intendedMajors', 'catalogYear']) assert.ok(!JSON.stringify(request).includes(field));
       assert.equal(request.courseFallback.targetId, failed.id);
-      await fallback.getByRole('heading', { name: 'Different courses to consider', exact: true }).waitFor();
+      await fallback.getByRole('heading', { name: 'Courses that may advance your degree', exact: true }).waitFor();
     }
-    await findCoursesAndConfirmPrivacy();
+    await findCoursesAndConfirmPrivacy(() => update.click());
+    await fallback.getByText('Plan 01:198:112 for a later term', { exact: true }).press('Enter');
+    await fallback.getByText(/Postponing 01:198:112 could delay 01:198:211/).waitFor();
+    await fallback.getByRole('button', { name: 'Add 01:198:112 to planned future courses' }).click();
+    assert.equal(await academic.getByLabel('Planned future courses').inputValue(), '01:198:112');
+    await findCoursesAndConfirmPrivacy(() => update.click());
     const calculusII = fallback.locator('article').filter({ has: page.getByRole('heading', { name: /01:640:152/ }) });
     await calculusII.locator('summary').filter({ hasText: 'Prerequisite needs verification' }).first().click();
     await calculusII.getByText(/In progress in your profile: 01:640:151/).first().waitFor();
     const review = fallback.locator('article').first().getByRole('button', { name: /^Review section/ }).first();
     await review.press('Enter');
-    const applyAlternative = fallback.getByRole('button', { name: 'Apply approved course alternative' });
+    const applyAlternative = fallback.getByRole('button', { name: 'Apply approved replacement' });
     assert.equal(await applyAlternative.isDisabled(), true);
     const approval = fallback.getByLabel('I approve this planner change', { exact: false });
     await approval.check();
     await academic.getByLabel('Program or catalog year').fill('2025');
     await update.click();
-    await fallback.getByText(/Search again before applying an alternative/).waitFor();
+    await fallback.getByRole('heading', { name: 'Courses that may advance your degree' }).waitFor({ state: 'hidden' });
     assert.equal(await applyAlternative.count(), 0);
     await academic.getByLabel('Program or catalog year').fill('2026');
-    await update.click();
-    await findCoursesAndConfirmPrivacy();
-    const selectedAlternative = (await review.textContent()).match(/index (\d{5})/)[1];
+    await findCoursesAndConfirmPrivacy(() => update.click());
+    const selectedAlternative = (await review.getAttribute('aria-label')).match(/index (\d{5})/)[1];
     await review.press('Enter');
     await approval.check();
     await applyAlternative.click();
@@ -225,6 +313,7 @@ try {
     for (const section of registered) assert.equal(await page.locator(`#selected-${section.index} .registration-report select`).inputValue(), 'registered');
     await page.getByRole('button', { name: 'Undo applied course alternative' }).click();
     assert.equal(await page.locator(`#selected-${failed.index} .registration-report select`).inputValue(), 'failed');
+    await show(page, 'Build');
     assert.equal(await page.locator('.generator-choices').getByText('01:198:112', { exact: true }).count(), 1);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
@@ -244,8 +333,7 @@ try {
   assert.ok(protectedResult.schedules.every(s => s.selections.some(item => item.section.id === calculus.sections[0].id)));
   assert.ok(protectedResult.request.constraints.lockedSectionIds.includes(calculus.sections[0].id));
   const manualChoice = page.locator('.generator-choices > li').filter({ hasText: calculus.code });
-  await manualChoice.locator('summary').click();
-  await manualChoice.getByLabel(`Keep section ${calculus.sections[0].number}`, { exact: true }).uncheck();
+  await manualChoice.getByLabel(`Keep section ${calculus.sections[0].number} for ${calculus.code}`, { exact: true }).uncheck();
   const flexible = await generate(page);
   assert.equal(flexible.request.constraints.lockedSectionIds.includes(calculus.sections[0].id), false);
   // A preference change makes the preview stale; no result may be applied.
@@ -260,26 +348,33 @@ try {
   for (const section of protectedThree) {
     assert.equal(await page.locator('#selected-' + section.index).getByRole('button', { name: 'Remove section ' + section.number }).isDisabled(), true);
   }
-  await page.getByRole('button', { name: 'Get registration help for ' + calculus.code, exact: true }).click();
+  await page.getByRole('button', { name: 'Find a replacement for ' + calculus.code, exact: true }).click();
   const rescue = page.locator('#rescue-panel');
+  const guidance = rescue.getByText('Why might registration have failed?', { exact: true });
+  const advanced = rescue.getByText('More repair options', { exact: true });
+  await guidance.click();
   await rescue.getByText('BetterCSP cannot establish the cause', { exact: false }).waitFor();
   assert.equal(await rescue.getByRole('button', { name: 'Find minimum-change repairs' }).count(), 0);
   await rescue.getByLabel('What went wrong with registration?').selectOption('closed');
-  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), failed.id);
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), failed.index);
+  await advanced.click();
   const searchRescue = rescue.getByRole('button', { name: 'Find minimum-change repairs', exact: true });
   const savedBefore = await page.evaluate(key => localStorage.getItem(key), key);
-  await page.route('**/api/planner/rescue', route => route.fulfill({ status: 503, json: { error: 'Rescue is temporarily unavailable.' } }));
+  const rescueFailure = route => route.request().postDataJSON().courseFallback ? route.continue()
+    : route.fulfill({ status: 503, json: { error: 'Rescue is temporarily unavailable.' } });
+  await page.route('**/api/planner/rescue', rescueFailure);
   await searchRescue.click();
   await rescue.getByRole('alert').filter({ hasText: 'Rescue is temporarily unavailable.' }).waitFor();
   assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedBefore);
-  await page.unroute('**/api/planner/rescue');
+  await page.unroute('**/api/planner/rescue', rescueFailure);
   await searchRescue.click();
   await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
   await rescue.getByText('1 section changes · 3 unchanged.', { exact: true }).waitFor();
   await page.setViewportSize({ width: 375, height: 812 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  await rescue.locator('.week-calendar').waitFor();
-  await rescue.getByRole('region', { name: 'Weekly calendar', exact: false }).focus();
+  const proposals = rescue.getByRole('region', { name: 'Rescue proposals' });
+  await proposals.locator('.week-calendar').waitFor();
+  await proposals.getByRole('region', { name: 'Weekly calendar', exact: false }).focus();
   assert.equal(await rescue.getByRole('button', { name: 'Apply approved repair' }).isDisabled(), true);
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const section of protectedThree) {
@@ -287,14 +382,19 @@ try {
     assert.match(await row.first().innerText(), /Preserved/);
   }
   await rescue.locator('.calendar-event[data-campus]').first().waitFor();
-  await rescue.getByRole('list', { name: 'Calendar campus and availability legend' }).waitFor();
+  await proposals.getByRole('list', { name: 'Calendar campus and availability legend' }).waitFor();
   const applyRepair = rescue.getByRole('button', { name: 'Apply approved repair', exact: true });
   assert.equal(await applyRepair.isDisabled(), true);
   await rescue.getByLabel('I approve the complete before/after', { exact: false }).check();
+  await show(page, 'My Schedule');
   await page.locator('#selected-' + failed.index + ' .registration-report select').selectOption('needs-verification');
+  await show(page, 'Rescue');
   assert.equal(await applyRepair.isDisabled(), true);
+  await show(page, 'My Schedule');
   await page.locator('#selected-' + failed.index + ' .registration-report select').selectOption('failed');
+  await show(page, 'Rescue');
   await applyRepair.click();
+  await page.getByText('Repair applied to your planner.', { exact: false }).waitFor();
   const applied = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
   assert.ok(!applied.sectionIds.includes(failed.id));
   assert.ok(protectedThree.every(section => applied.sectionIds.includes(section.id) && applied.registrationStatuses[section.id] === 'registered'));
@@ -338,6 +438,7 @@ try {
   assert.equal(await remember.isChecked(), true);
   await page.route('**/api/planner/generate', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Try again shortly.' }) }));
   const nextRequest = page.waitForRequest(r => r.url().endsWith('/api/planner/generate') && r.method() === 'POST');
+  await show(page, 'Build');
   await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
   const payload = (await nextRequest).postDataJSON().eligibility.profile;
   assert.deepEqual(payload.completedCourses, ['01:198:111']);
@@ -362,8 +463,8 @@ try {
   assert.equal(await academic.getByLabel('Declared or intended majors').inputValue(), '');
   const honors = calculus.sections.find(s => s.index === '15919');
   await seed(page, [honors]);
-  await page.getByRole('button', { name: 'Check registration readiness', exact: true }).click();
   const preflight = page.locator('#saved-preflight');
+  await preflight.getByText('Check registration readiness', { exact: true }).click();
   await preflight.getByRole('heading', { name: /Index 15919/ }).waitFor();
   assert.match(await preflight.getByRole('link', { name: 'Rutgers guidance' }).first().getAttribute('href'), /math.sas.rutgers.edu/);
   await preflight.getByText('Switching sections does not resolve it by itself.', { exact: false }).waitFor();
@@ -381,32 +482,34 @@ try {
   await preflight.getByRole('heading', { name: 'Other sections of 01:640:251' }).waitFor();
   assert.equal(await page.evaluate(key => localStorage.getItem(key), key), baselineBeforePreflight);
   await preflight.getByRole('button', { name: 'Review a repair in Registration Rescue' }).click();
-  assert.equal(await rescue.getByLabel('What went wrong with registration?').inputValue(), 'replace');
+  await guidance.click();
   const reason = rescue.getByLabel('What went wrong with registration?');
   await reason.selectOption('permission');
-  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.id);
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.index);
   assert.match(await rescue.getByRole('link', { name: 'Rutgers permission instructions' }).getAttribute('href'), /math.sas.rutgers.edu/);
-  assert.equal(await rescue.getByRole('button', { name: 'Look for another section instead' }).isVisible(), true);
   assert.equal(await rescue.getByRole('heading', { name: 'Proposed repairs' }).count(), 0);
-  await rescue.getByRole('button', { name: 'Look for another section instead' }).click();
+  await advanced.click();
+  await searchRescue.click();
   await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
   await reason.selectOption('prerequisite');
   await rescue.getByText('cannot verify the academic record', { exact: false }).waitFor();
   await rescue.getByText('Another section may have the same requirement.', { exact: false }).waitFor();
-  assert.equal(await searchRescue.count(), 0);
+  assert.equal(await rescue.getByRole('heading', { name: 'Proposed repairs' }).count(), 0);
 
   await seed(page, [honors]);
+  await show(page, 'Build');
+  await page.getByLabel(`Keep section ${honors.number} for ${calculus.code}`, { exact: true }).check();
   await generate(page);
   const generatedPreflight = page.locator('.generation-results .registration-preflight');
   await generatedPreflight.locator('summary').first().click();
   await generatedPreflight.getByRole('heading', { name: /Index 15919/ }).waitFor();
   await generatedPreflight.getByRole('button', { name: 'Apply this preview and open Registration Rescue' }).click();
-  assert.equal(await rescue.getByLabel('What went wrong with registration?').inputValue(), 'replace');
-  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.id);
+  await rescue.getByLabel('Which section is affected?').waitFor();
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.index);
   assert.equal(await rescue.getByRole('heading', { name: 'Proposed repairs' }).count(), 0);
 
   await seed(page, [honors], { [honors.id]: 'registered' });
-  await page.getByRole('button', { name: 'Check registration readiness', exact: true }).click();
+  await preflight.getByText('Check registration readiness', { exact: true }).click();
   await preflight.getByText('This section is protected.', { exact: false }).waitFor();
   assert.equal(await preflight.getByRole('button', { name: 'See alternate sections' }).count(), 0);
   await page.setViewportSize({ width: 375, height: 812 });
@@ -416,10 +519,12 @@ try {
   const conflictMath = calculus.sections.find(s => s.index === '15897');
   const conflictCs = cs.sections.find(s => s.index === '14332');
   await seed(page, [conflictMath, conflictCs], { [conflictMath.id]: 'registered', [conflictCs.id]: 'registered' });
-  await page.locator('#manual-schedule').getByRole('button', { name: 'Registration Rescue — Something went wrong?', exact: true }).click();
+  await show(page, 'Rescue');
+  await rescue.getByLabel('Which section is affected?').selectOption(conflictMath.index);
+  await guidance.click();
   await reason.selectOption('conflict');
-  await rescue.getByLabel('Which section is affected?').selectOption(conflictMath.id);
   await rescue.locator('.schedule-status').getByText(/overlaps.*Eastern/).first().waitFor();
+  await rescue.getByRole('button', { name: 'Review protected repair options' }).click();
   await searchRescue.click();
   await rescue.getByRole('heading', { name: 'No repair found under these protections' }).waitFor();
   await rescue.getByText('Explicitly authorize exploring protected changes', { exact: true }).click();
@@ -487,5 +592,5 @@ try {
     assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await context.close();
   }
-  console.log('PASS: desktop/mobile four-course workflow, discovery, previews, saved drafts, Preflight, guided Rescue, degree-aware alternatives, three protected registrations, profile invalidation, postponement, consent and undo, and academic profile persistence and privacy.');
+  console.log('PASS: desktop/mobile planner navigation and focus, restored flexibility and protections, single-schedule explanations, signed and partial discovery, contextual replacement and retry, clipboard, Preflight, degree-aware alternatives, stale results, approval, undo, and profile privacy.');
 } finally { await browser.close(); }

@@ -27,12 +27,12 @@ export function RescueGuidance({ reason, affected, selections, conflicts, profil
   const permissionLink = permission?.evidence.at(-1);
   const missing = [...new Set(relevant.flatMap(finding => finding.missing))];
   const actions = {
-    closed: 'Verify current seats in Rutgers’ Schedule of Classes or WebReg. Search for another section if your preferred one is unavailable.',
+    closed: 'Verify current seats in Rutgers’ Schedule of Classes or WebReg. Review the alternatives above if your preferred section is unavailable.',
     rejected: 'Check the exact error in WebReg. Have the course and registration index ready when you contact the offering department or an academic adviser. If you identify the cause, choose that situation above.',
     permission: permission?.nextStep ?? 'Check the WebReg message and follow the offering department’s permission instructions. If there is no published process, ask the department which approval applies to this section.',
     prerequisite: 'Compare your recorded course credit or placement with the course requirement. Ask the offering department to verify any unrecognized credit, placement, or possible override.',
-    conflict: conflicts.length ? 'Look for a schedule repair. Rescue can move either conflicting section when its protections allow it.' : 'Check the other section’s times with Rutgers and add that section to your plan if it is missing.',
-    replace: 'Search for a different section of this course. Rescue starts by trying to change only this section.',
+    conflict: conflicts.length ? 'Use More repair options if you want to consider moving either conflicting section. Protections still apply.' : 'Check the other section’s times with Rutgers and add that section to your plan if it is missing.',
+    replace: 'Review the options above. Rescue starts with replacements that keep every other section in place.',
   };
   return <div className="schedule-status">
     <h3>What happened</h3>
@@ -53,7 +53,7 @@ export function RescueGuidance({ reason, affected, selections, conflicts, profil
     {reason === 'permission' && <a className="back-link" href={permissionLink?.url ?? (course.code.startsWith('01:198:') ? sourceLinks.csPermission : sourceLinks.registration)}>Rutgers permission instructions ↗</a>}
     {(reason === 'rejected' || reason === 'prerequisite') && <a className="back-link" href={sourceLinks.registration}>Rutgers registration guidance ↗</a>}
     <h3>What happens to your schedule</h3>
-    <p>{reason === 'prerequisite' ? 'Your plan stays the same. Another section may have the same requirement.' : reason === 'permission' ? 'You can keep this section while requesting permission, or ask Rescue to look for another section.' : 'Your draft stays the same until you approve a repair.'}</p>
+    <p>{reason === 'prerequisite' ? 'Your plan stays the same. Another section may have the same requirement.' : reason === 'permission' ? 'You can keep this section while requesting permission or review a replacement.' : 'Your draft stays the same until you approve a repair.'}</p>
     {!!relevant.length && <details><summary>Rutgers requirements and source evidence</summary><ReadinessFindings findings={relevant} /></details>}
   </div>;
 }

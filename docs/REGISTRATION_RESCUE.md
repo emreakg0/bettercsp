@@ -93,15 +93,19 @@ registration and cannot establish eligibility or reserve a seat.
 
 ## Interface, approval, and undo
 
-Registration Rescue appears above the planner workspace and can be opened from the saved schedule.
-Guided intake asks what went wrong and which section is affected. Empty plans link to course search.
-Closure and requested swaps offer replacement search. Known meeting overlaps show both meeting
-times and offer a repair without selecting either section for mandatory replacement. Permission
-guidance offers an explicit alternative search. Prerequisite or placement concerns and unexplained
-WebReg rejections lead to verification with Rutgers. No search runs when the student selects an
-intake answer. The existing hard constraints and preferences also apply to Rescue. Rescue uses the
-existing eligibility fields from the optional academic profile. Planning-only fields stay in the
-browser. Optional server availability checks are off by default.
+Rescue is a planner destination. Choose an affected section or open its replacement action in My
+Schedule or Preflight. An unprotected selection automatically checks the strict one-index
+replacement path and lists same-course choices first. A supported academic profile adds
+degree-aware choices to that request. Empty plans link to course search. An index absent from the
+draft prompts the student to choose or add a section. Registration indexes are visible and
+copyable. Checking alternatives leaves the saved schedule intact.
+
+The registration guidance disclosure retains closure, permission, prerequisites, placement,
+unexplained WebReg errors, and known overlap explanations. More repair options runs the existing
+minimum-change solver, can consider moving other sections, and retains separate exploration and
+application consent for protected changes. The same hard constraints and preferences apply. Only
+existing eligibility fields and derived candidate codes are sent. Optional availability checks
+in the detailed repair path are off by default.
 
 Alternatives lead with their goal, changed sections, preserved count, and remaining verification,
 followed by before/after tables and a calendar preview. Disclosures retain comparison, readiness,

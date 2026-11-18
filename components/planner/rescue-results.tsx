@@ -4,6 +4,7 @@ import type { RescueDraft, RescueResult, Repair } from '@/lib/recovery/types';
 import { registrationLabels } from '@/lib/recovery/types';
 import { WeeklyCalendar } from './weekly-calendar';
 import { RegistrationReadiness } from './registration-readiness';
+import { RegistrationIndex } from './registration-index';
 
 // Rescue proposals reuse calendar/readiness views but need explicit before/after approval controls.
 export function RescueResults({ result, draft, goal, profile, stale, overrides, onApply }: {
@@ -43,7 +44,7 @@ export function RescueResults({ result, draft, goal, profile, stale, overrides, 
         {repair.before.map(before => {
           const after = repair.schedule.selections.find(s => s.course.id === before.course.id)!;
           return <tr key={before.course.id}><th>{before.course.code}</th><td>Section {before.section.number} · {before.section.index}<br />{registrationLabels[draft.statuses[before.section.id] ?? 'planned']}{draft.locks.includes(before.section.id) ? ' · locked' : ''}</td>
-            <td>Section {after.section.number} · {after.section.index}</td><td>{before.section.id === after.section.id ? 'Preserved' : draft.statuses[before.section.id] === 'registered' ? 'Registered section would change in this planner only' : 'Replace; new index remains planned'}</td></tr>;
+            <td>Section {after.section.number} · <RegistrationIndex key={after.section.index} index={after.section.index} /></td><td>{before.section.id === after.section.id ? 'Preserved' : draft.statuses[before.section.id] === 'registered' ? 'Registered section would change in this planner only' : 'Replace; new index remains planned'}</td></tr>;
         })}
       </tbody></table></div>
       <WeeklyCalendar selections={repair.schedule.selections} idPrefix="rescue" />

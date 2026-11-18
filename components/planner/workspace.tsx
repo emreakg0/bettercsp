@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { findConflicts, formatDay, formatTime, needsTimingVerification } from '@/lib/scheduling/meetings';
@@ -9,16 +10,22 @@ import { WeeklyCalendar } from './weekly-calendar';
 import { ScheduleGenerator, type GeneratorChoice } from './schedule-generator';
 import { AcademicProfile } from './academic-profile';
 import { RegistrationPreflight } from './registration-preflight';
+import { RegistrationIndex } from './registration-index';
 import { sectionWarning } from '@/lib/eligibility/preflight';
 import { eligibilityForSource, emptyAcademicProfile } from '@/lib/academic/profile';
 import { RescuePanel } from './rescue-panel';
-import type { RescueReason } from './rescue-intake';
 import { initialSettings, type GenerationSettings } from './generation-controls';
 import { applyCourseFallback, applyRepair, draftSignature, protectedSections, readSavedRegistration, registrationAfterChange, undoRepair } from '@/lib/recovery/state';
 import { registrationLabels, type RegistrationStatuses, type Repair, type RescueDraft } from '@/lib/recovery/types';
 import type { RankedSchedule } from '@/lib/scheduling/generation-types';
 
-// Workspace state is new: Phase 1 has no section selection or browser persistence.
+type PlannerView = 'build' | 'schedule' | 'rescue';
+const destinations = { build: 'Build', schedule: 'My Schedule', rescue: 'Rescue' } as const;
+
+function focusDestination(id: string): void {
+  document.getElementById(id)?.focus();
+}
+
 export function PlannerWorkspace({ sourceId, courses, children }: {
   sourceId: string; courses: PlannerCourse[]; children: ReactNode;
 }) {
@@ -30,7 +37,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const [applyError, setApplyError] = useState('');
   const [statuses, setStatuses] = useState<RegistrationStatuses>({});
   const [settings, setSettings] = useState<GenerationSettings>(initialSettings);
-  const [rescueEntry, setRescueEntry] = useState<{ key: number; sectionId?: string; reason?: RescueReason }>({ key: 0 });
+  const [draftMessage, setDraftMessage] = useState('');
   const [backup, setBackup] = useState<{ before: RescueDraft; afterSignature: string; label: string;
     choices?: { before: GeneratorChoice[]; after: GeneratorChoice[] } } | null>(null);
   const academicControl = useRef<{ planCourse: (code: string) => void }>(null);
@@ -39,10 +46,36 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const [error, setError] = useState('');
   const [saveStatus, setSaveStatus] = useState('Loading saved schedule…');
   const [attempt, setAttempt] = useState(0);
-  const [view, setView] = useState<'courses' | 'calendar'>('courses');
-  const [scheduleView, setScheduleView] = useState<'results' | 'saved'>('results');
+  const params = useSearchParams();
+  const destination = params.get('view');
+  const view = destination === 'schedule' || destination === 'rescue' ? destination : 'build';
+  const rescueIndex = params.get('section') ?? '';
+  const requestedFocus = useRef<string | null>(null);
+  const previousView = useRef<PlannerView>(view);
   const key = storageKey(sourceId);
   const [showGuide, setShowGuide] = useState(true);
+
+  useEffect(() => {
+    const target = requestedFocus.current ?? (previousView.current !== view
+      ? view === 'build' && params.get('q') ? 'course-search' : `planner-${view}-heading` : null);
+    requestedFocus.current = null;
+    previousView.current = view;
+    if (target) focusDestination(target);
+  }, [params, view]);
+
+  function navigate(next: PlannerView, focus: string | null = `planner-${next}-heading`, index?: string): void {
+    const url = new URL(window.location.href);
+    if (next === 'build') url.searchParams.delete('view');
+    else url.searchParams.set('view', next);
+    if (index !== undefined) {
+      if (index) url.searchParams.set('section', index);
+      else url.searchParams.delete('section');
+    }
+    url.hash = '';
+    if (url.href === window.location.href) { if (focus) focusDestination(focus); return; }
+    requestedFocus.current = focus;
+    window.history.pushState(null, '', url);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -60,8 +93,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
         const restored: { selections: Selection[] } = response ? await response.json() : { selections: [] };
         if (controller.signal.aborted) return;
         setSelections(restored.selections);
-        setChoices(restored.selections.slice(0, 12).map(({ course, section }) => ({ courseId: course.id, code: course.code, title: course.title, required: true, keepSection: true, campuses: section.campuses })));
-        if (restored.selections.length) setScheduleView('saved');
+        setChoices(restored.selections.slice(0, 12).map(({ course, section }) => ({ courseId: course.id, code: course.code, title: course.title, required: true, campuses: section.campuses })));
         setLocks(savedLocks); setStatuses(registration);
         setMissing(ids.filter(id => !restored.selections.some(s => s.section.id === id)));
         setError('');
@@ -97,39 +129,8 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
     try { return { ...settings.hard, excludedSectionIds: excludedIndexIds(settings.excludedIndexes, sourceId) }; }
     catch { return null; }
   })();
-  function openPreflight(): void {
-    setView('calendar');
-    setScheduleView('saved');
-    requestAnimationFrame(() => {
-      const panel = document.querySelector<HTMLDetailsElement>('#saved-preflight');
-      if (!panel) return;
-      panel.open = true;
-      panel.querySelector<HTMLElement>('summary')?.focus();
-      panel.scrollIntoView({ block: 'start' });
-    });
-  }
-  function openRescue(sectionId?: string, reason?: RescueReason): void {
-    if (sectionId) setRescueEntry(current => ({ key: current.key + 1, sectionId, reason }));
-    requestAnimationFrame(() => {
-      const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
-      if (!panel) return;
-      panel.open = true;
-      panel.querySelector<HTMLElement>('summary')?.focus();
-      panel.scrollIntoView({ block: 'start' });
-    });
-  }
-  function findRescueCourse(): void {
-    const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
-    if (panel) panel.open = false;
-    setView('courses');
-    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#planner-search input[type=search]')?.focus());
-  }
-  function reviewRescueSchedule(): void {
-    const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
-    if (panel) panel.open = false;
-    setView('calendar');
-    setScheduleView('saved');
-    requestAnimationFrame(() => document.querySelector<HTMLSelectElement>('#manual-schedule .registration-report select')?.focus());
+  function openRescue(sectionId: string): void {
+    navigate('rescue', 'planner-rescue-heading', sectionId.split(':').at(-1));
   }
   // Candidate-only additions reuse course identities; manual choices additionally keep their exact section.
   function addCourse(course: PlannerCourse, keepSection = false): void {
@@ -137,35 +138,40 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       ? current.map(c => c.courseId === course.id && keepSection ? { ...c, keepSection: true } : c)
       : current.length < 12 ? [...current, { courseId: course.id, code: course.code, title: course.title, required: true, keepSection, campuses: [...new Set(course.sections.flatMap(s => s.campuses))] }] : current);
   }
-  function removeCourse(courseId: string): void {
-    if (selections.some(s => s.course.id === courseId && effectiveLocks.includes(s.section.id))) return;
-    setBackup(null); setChoices(current => current.filter(c => c.courseId !== courseId));
-    const next = selections.filter(s => s.course.id !== courseId);
-    setStatuses(registrationAfterChange(selections, next, statuses)); setSelections(next);
-  }
   function add(course: PlannerCourse, section: Selection['section']): void {
     if (selections.some(s => s.course.id === course.id && effectiveLocks.includes(s.section.id))) return;
     setBackup(null);
-    addCourse(course, true); setScheduleView('saved'); setView('calendar');
+    addCourse(course, true);
     const next = selectSection(selections, course, section);
     setStatuses(registrationAfterChange(selections, next, statuses)); setSelections(next);
+    setDraftMessage(`${course.code} section ${section.number} saved to your planner.`);
+    navigate('schedule');
   }
-  function apply(schedule: RankedSchedule, targetIds: string[]): boolean {
+  function reportApplyError(error: unknown, fallback: string): false {
+    setApplyError(error instanceof Error ? error.message : fallback);
+    requestAnimationFrame(() => focusDestination('planner-apply-error'));
+    return false;
+  }
+  function apply(schedule: RankedSchedule, targetIds: string[], rescueSectionId?: string): boolean {
     try {
       const next = applyGenerated(selections, schedule.selections, targetIds, effectiveLocks);
       const nextStatuses = registrationAfterChange(selections, next, statuses);
-      setApplyError(''); setBackup({ before: draft, afterSignature: draftSignature({ selections: next, locks, statuses: nextStatuses }), label: 'Restore pre-generation schedule' }); setSelections(next); setStatuses(nextStatuses); setView('calendar'); setScheduleView('saved');
-      requestAnimationFrame(() => document.getElementById('manual-schedule')?.scrollIntoView({ block: 'start' }));
+      setApplyError(''); setBackup({ before: draft, afterSignature: draftSignature({ selections: next, locks, statuses: nextStatuses }), label: 'Restore pre-generation schedule' }); setSelections(next); setStatuses(nextStatuses);
+      setDraftMessage('Applied to your saved schedule.');
+      if (rescueSectionId) openRescue(rescueSectionId);
+      else navigate('schedule');
       return true;
-    } catch (err) { setApplyError(err instanceof Error ? err.message : 'Unable to apply. Generate again.'); return false; }
+    } catch (err) { return reportApplyError(err, 'Unable to apply. Generate again.'); }
   }
   function acceptRepair(repair: Repair, basis: string, overrides: string[]): boolean {
     try {
       const next = applyRepair(draft, repair, basis, overrides);
       setBackup({ before: draft, afterSignature: draftSignature(next), label: 'Undo applied repair' });
-      setSelections(next.selections); setLocks(next.locks); setStatuses(next.statuses); setApplyError(''); setView('calendar'); setScheduleView('saved');
+      setSelections(next.selections); setLocks(next.locks); setStatuses(next.statuses); setApplyError('');
+      setDraftMessage('Repair applied to your planner. Your WebReg registration is unchanged.');
+      navigate('schedule');
       return true;
-    } catch (err) { setApplyError(err instanceof Error ? err.message : 'Repair could not be applied. Search again.'); return false; }
+    } catch (err) { return reportApplyError(err, 'Repair could not be applied. Search again.'); }
   }
   function acceptCourseFallback(targetId: string, replacement: Selection, basis: string): boolean {
     try {
@@ -179,35 +185,34 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       const nextChoices = choices.filter(item => item.courseId !== target.course.id && item.courseId !== replacement.course.id);
       if (nextChoices.length < 12) nextChoices.push(choice);
       setBackup({ before: draft, afterSignature: draftSignature(next), label: 'Undo applied course alternative', choices: { before: choices, after: nextChoices } });
-      setChoices(nextChoices); setSelections(next.selections); setStatuses(next.statuses); setApplyError(''); setView('calendar'); setScheduleView('saved');
-      requestAnimationFrame(() => document.getElementById('manual-schedule')?.scrollIntoView({ block: 'start' }));
+      setChoices(nextChoices); setSelections(next.selections); setStatuses(next.statuses); setApplyError('');
+      setDraftMessage('Alternative applied to your planner. Your WebReg registration is unchanged.');
+      navigate('schedule');
       return true;
-    } catch (err) { setApplyError(err instanceof Error ? err.message : 'Course alternative could not be applied. Search again.'); return false; }
+    } catch (err) { return reportApplyError(err, 'Course alternative could not be applied. Search again.'); }
   }
   const undoUnavailable = !!backup && (draftSignature(draft) !== backup.afterSignature || !!backup.choices && choices !== backup.choices.after);
   return <>
-    <RescuePanel key={rescueEntry.key} sourceId={sourceId} draft={draft} profile={profile} academic={academicProfile} settings={settings} ready={canGenerate}
-      initialSectionId={rescueEntry.sectionId} initialReason={rescueEntry.reason} onFindCourse={findRescueCourse}
-      onReviewSchedule={reviewRescueSchedule} onApply={acceptRepair} onApplyCourse={acceptCourseFallback} onPlanLater={code => academicControl.current?.planCourse(code)} />
-    <div className="generation-actions"><button className="button" onClick={openPreflight}>Check registration readiness</button></div>
-    {showGuide && <aside className="schedule-status" aria-label="Planner quick start">
-      <strong>Start with a few courses.</strong>
-      <p>Find courses and choose “Add course”. Set preferences if you want, then generate schedules. Compare the calendars and apply your preferred result. Use “Choose a specific section” for manual planning.</p>
-      <button className="text-button" onClick={() => { setShowGuide(false); try { localStorage.setItem('bettercsp:planner:guide:v1', 'dismissed'); } catch { /* Dismissal still works for this visit. */ } }}>Dismiss quick start</button>
-    </aside>}
-    <div className="planner-tabs" aria-label="Workspace view">
-      <button aria-pressed={view === 'courses'} onClick={() => setView('courses')}>Courses</button>
-      <button aria-pressed={view === 'calendar'} onClick={() => setView('calendar')}>Calendar ({selections.length})</button>
-    </div>
+    <nav className="planner-tabs" aria-label="Planner workspace">
+      {(Object.keys(destinations) as PlannerView[]).map(destination => <button key={destination}
+        aria-current={view === destination ? 'page' : undefined} onClick={() => navigate(destination)}>{destinations[destination]}</button>)}
+    </nav>
     {error && <div className="snapshot-note" role="alert"><p>{error}</p>
       <button className="text-button" onClick={() => setAttempt(a => a + 1)}>Retry loading</button>{' · '}
       <button className="text-button" onClick={() => { setSelections([]); setLocks([]); setStatuses({}); setMissing([]); setError(''); setReady(true); }}>Start a new local schedule</button>
     </div>}
-    {applyError && <p className="snapshot-note" role="alert">{applyError}</p>}
-    <ScheduleGenerator sourceId={sourceId} choices={choices} onChoicesChange={setChoices} selections={selections} locks={effectiveLocks}
+    {applyError && <p className="snapshot-note" id="planner-apply-error" role="alert" tabIndex={-1}>{applyError}</p>}
+    <div hidden={view !== 'build'}>
+    <h2 id="planner-build-heading" tabIndex={-1}>Build a schedule</h2>
+    {showGuide && <aside className="schedule-status" aria-label="Planner quick start">
+      <p>Add courses, generate schedules, then apply the one you want to keep in My Schedule. Choose a specific section to build by hand.</p>
+      <button className="text-button" onClick={() => { setShowGuide(false); try { localStorage.setItem('bettercsp:planner:guide:v1', 'dismissed'); } catch { /* Dismissal still works for this visit. */ } }}>Dismiss quick start</button>
+    </aside>}
+    <ScheduleGenerator sourceId={sourceId} choices={choices} onChoicesChange={setChoices} selections={selections} locks={effectiveLocks} statuses={statuses}
       ready={canGenerate} onApply={apply} profile={profile} planning={academicProfile}
-      preflightConstraints={preflightConstraints} onRescue={sectionId => openRescue(sectionId, 'replace')} settings={settings} onSettingsChange={setSettings}
-      view={view} scheduleView={scheduleView} onViewChange={setView} onScheduleViewChange={setScheduleView} onRemoveCourse={removeCourse}
+      preflightConstraints={preflightConstraints} settings={settings} onSettingsChange={setSettings}
+      active={view === 'build'} onRemoveCourse={id => setChoices(current => current.filter(course => course.courseId !== id))} onSearch={() => focusDestination('course-search')}
+      onReviewSchedule={() => navigate('schedule')}
       picker={<>
         {children}
         <div className="planner-search-results" role="region" aria-label="Course search results" tabIndex={0}>
@@ -229,16 +234,20 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
         </article>)}
         </div>
       </>}
-      manualSchedule={
-      <section id="manual-schedule" className="saved-schedule" aria-label="Your weekly schedule">
-        <div className="results-heading"><h2>Your week <span className="count">{selections.length}</span></h2><p role="status">{saveStatus}</p></div>
+    />
+    </div>
+      <section hidden={view !== 'schedule'} id="manual-schedule" className="saved-schedule" aria-label="Your weekly schedule">
+        <div className="results-heading"><h2 id="planner-schedule-heading" tabIndex={-1}>My Schedule <span className="count">{selections.length}</span></h2><p role="status">{saveStatus}</p></div>
+        {draftMessage && <p role="status">{draftMessage}</p>}
         <p className="muted" aria-live="polite">{selections.length} selected {selections.length === 1 ? 'course' : 'courses'} · {selectedCreditsLabel(selections.map(s => s.course))}{missing.length ? ' · Totals exclude unresolved saved sections below.' : ''}</p>
-        <button className="text-button" onClick={() => openRescue()}>Registration Rescue — Something went wrong?</button>
+        {!selections.length && <button className="button" onClick={() => navigate('build', 'course-search')}>Find courses</button>}
         {backup && <button className="text-button" disabled={undoUnavailable} onClick={() => {
           const before = undoRepair(draft, backup.before, backup.afterSignature);
           setSelections(before.selections); setLocks(before.locks); setStatuses(before.statuses);
           if (backup.choices) setChoices(backup.choices.before);
           setBackup(null);
+          setDraftMessage('Restored your previous planner schedule.');
+          focusDestination('planner-schedule-heading');
         }}>{backup.label}</button>}
         {!!priorRegistered.length && <aside className="snapshot-note"><strong>Earlier registered self-reports need WebReg verification</strong><p>These indexes are outside this planner draft. A planner repair did not drop them from Rutgers enrollment. Automatic planning waits until you verify and update these reports.</p>{priorRegistered.map(([id]) => <div key={id}><span>Index {id.split(':').at(-1)} · registered self-report </span><button className="text-button" onClick={() => setStatuses(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)))}>I verified this prior enrollment; clear report</button></div>)}</aside>}
         <p className="muted">All times Eastern · all seven days. Select a calendar block for its section details.</p>
@@ -257,18 +266,18 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
         </div>
         <RegistrationPreflight id="saved-preflight" selections={selections} profile={profile} planning={academicProfile}
           protectedIds={effectiveLocks} constraints={preflightConstraints} unresolved={missing.length} stale={!ready}
-          onRescue={canGenerate ? sectionId => openRescue(sectionId, 'replace') : undefined} />
+          onRescue={canGenerate ? openRescue : undefined} />
         <WeeklyCalendar selections={selections} />
         <div className="results-heading"><h2>Selected sections</h2></div>
         {!selections.length && <p className="muted">Add a section from course search, or apply a generated schedule. Your selected sections and registration reports will appear here.</p>}
         {selections.map(({ course, section }) => <article className="selected-section" key={section.id} id={`selected-${section.index}`}>
-          <h3>{course.code} · {course.title}</h3><p className="muted">{course.creditsLabel}</p>
+          <h3>{course.code} · {course.title}</h3><p className="muted">{course.creditsLabel} · Section {section.number}</p>
+          <RegistrationIndex index={section.index} />
           <label className="registration-report">Registration report · index {section.index}<select value={statuses[section.id] ?? 'planned'} onChange={e => setStatuses(current => ({ ...current, [section.id]: e.target.value as RegistrationStatuses[string] }))}>{Object.entries(registrationLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          {statuses[section.id] && statuses[section.id] !== 'planned' && statuses[section.id] !== 'registered' && <button className="text-button" onClick={() => openRescue(section.id, statuses[section.id] === 'needs-permission' ? 'permission' : statuses[section.id] === 'failed' ? 'rejected' : undefined)}>Get registration help for {course.code}</button>}
           <p className="muted">Self-reported only. Updating this report does not enroll or drop a section in WebReg.</p>
           <SectionList sections={[section]} />
           {course.prerequisites && <p className="muted">Prerequisites: {course.prerequisites}</p>}
-          <Link className="text-button" href={`/planner?${new URLSearchParams({ q: course.code })}`} scroll={false} onClick={() => setView('courses')}>Find a replacement for {course.code} ↑</Link>
+          <button className="text-button" onClick={() => openRescue(section.id)}>Find a replacement for {course.code}</button>
           <button className="text-button" disabled={!locks.includes(section.id) && locks.length >= 12} aria-pressed={locks.includes(section.id)} onClick={() => setLocks(current => current.includes(section.id) ? current.filter(id => id !== section.id) : [...current, section.id])}>{locks.includes(section.id) ? `Unlock section ${section.number}` : `Lock section ${section.number}`}</button>
           <button className="text-button remove-button" disabled={effectiveLocks.includes(section.id)} onClick={() => { setBackup(null); const next = selections.filter(s => s.section.id !== section.id); setStatuses(registrationAfterChange(selections, next, statuses)); setSelections(next); setChoices(current => current.filter(c => c.courseId !== course.id)); }}>Remove section {section.number}</button>
         </article>)}
@@ -276,8 +285,10 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
           <button className="text-button" onClick={() => { setLocks(current => current.filter(value => value !== id)); setMissing(current => current.filter(value => value !== id)); }}>Remove unavailable saved section</button></div>)}
         <p className="footnote">Adding a section adds every meeting supplied for that index, including lectures, recitations, and labs. Separate required-section links and cross-listed equivalence have not been verified. Confirm the full enrollment bundle with Rutgers; do not add cross-listed alternatives for duplicate credit. Commute time and special session dates are not checked. Saves stay in this browser and can be cleared by browser settings; other tabs may overwrite them.</p>
       </section>
-      }
-    />
+    <RescuePanel sourceId={sourceId} draft={draft} profile={profile} academic={academicProfile} settings={settings} ready={canGenerate} restored={ready}
+      active={view === 'rescue'} sectionIndex={rescueIndex} onSelectSection={index => navigate('rescue', null, index)}
+      onFindCourse={() => navigate('build', 'course-search')} onReviewSchedule={() => navigate('schedule')}
+      onApply={acceptRepair} onApplyCourse={acceptCourseFallback} onPlanLater={code => academicControl.current?.planCourse(code)} />
     <div className="planner-secondary">
       <AcademicProfile ref={academicControl} sourceId={sourceId} onChange={setAcademicProfile} />
     </div>

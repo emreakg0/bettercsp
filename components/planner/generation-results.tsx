@@ -15,9 +15,10 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore }: {
+export function GenerationResults({ result, stale, onApply, canApply, profile, planning, preflightConstraints, protectedIds, loadingMore, canExplore, pageError, onExplore, emptyBatch, allFixed, onTryOtherSections, onReviewSchedule }: {
   planning: PlanningContext; preflightConstraints: HardConstraints | null; protectedIds: string[];
   profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule, rescueSectionId?: string) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
+  emptyBatch: boolean; allFixed: boolean; onTryOtherSections?: () => void; onReviewSchedule: () => void;
 }) {
   const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const index = Math.max(0, Math.min(requestedIndex, result.schedules.length - 1));
@@ -25,6 +26,7 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, p
   const progress = result.discovery;
   const hasMore = !!progress?.nextCursor && !stale && !pageError?.restart;
   const atEnd = index >= result.schedules.length - 1;
+  const onlyOne = progress?.exhausted && progress.uniqueValid === 1 && !progress.nextCursor;
   function next(): void {
     if (schedule && !atEnd) {
       setIndex(index + 1);
@@ -35,9 +37,9 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, p
     }
   }
   return <section className="generation-results" aria-label="Generated schedules">
-    {result.truncated && (progress?.sessionLimited || !progress?.resumable) && <p role="status" className="snapshot-note">{progress?.sessionLimited
-      ? 'This search reached its session limit. Unexplored combinations remain.'
-      : 'Search limit reached. Ranking covers the options found so far. A better schedule may exist.'}</p>}
+    {!stale && result.truncated && (progress?.sessionLimited || (!progress?.resumable && !hasMore)) && <p role="status" className="snapshot-note">{progress?.sessionLimited
+      ? 'This search reached its session limit. Some combinations remain unchecked.'
+      : 'The search reached its work limit. Some combinations remain unchecked.'}</p>}
     {stale && <p role="status" className="snapshot-note">Your choices, preferences, academic information, locks, or manual schedule changed. Generate again before applying.</p>}
     {!!result.issues.length && <ul className="generation-notes">{result.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
     {!schedule && <p className="muted">{progress?.nextCursor
@@ -51,11 +53,15 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, p
       {loadingMore && <p role="status" className="muted">Loading next schedules…</p>}
       {!stale && pageError && <div role="alert" className="muted">{pageError.message}{!pageError.restart && hasMore
         && <button className="text-button" disabled={!canExplore || loadingMore} onClick={onExplore}>Retry next batch</button>}</div>}
-      {!progress?.nextCursor && schedule && <p className="muted">{result.truncated
-        ? 'All shortlisted schedules are loaded. Unexplored combinations remain.'
-        : progress?.uniqueValid !== progress?.retained
-          ? 'Search exhausted. All shortlisted schedules are loaded.'
-          : 'All schedules found are loaded.'}</p>}
+      {!stale && atEnd && emptyBatch && hasMore && !loadingMore && !pageError && <p role="status" className="muted">The last batch found no new schedules. Choose Next schedule to keep searching.</p>}
+      {!stale && schedule && onlyOne && <div className="schedule-status">
+        <strong>{allFixed ? 'Every course is fixed to a section.' : 'Only one compatible timetable matches these choices and constraints.'}</strong>
+        {allFixed && <p>{onTryOtherSections ? 'Try other sections without changing My Schedule or releasing protected sections.' : 'Review registered or locked sections in My Schedule if a protection needs updating.'}</p>}
+        {allFixed && (onTryOtherSections ? <button className="button" onClick={onTryOtherSections}>Try other sections</button>
+          : <button className="text-button" onClick={onReviewSchedule}>Review protected sections</button>)}
+      </div>}
+      {!stale && !onlyOne && !progress?.nextCursor && schedule && !result.truncated && progress?.exhausted && <p className="muted">{progress.uniqueValid !== progress.retained
+        ? 'Search finished. All shortlisted schedules are loaded.' : 'Search finished. All compatible schedules are loaded.'}</p>}
     {schedule && <>
       <RegistrationPreflight key={schedule.id} selections={schedule.selections} profile={profile} planning={planning}
         protectedIds={protectedIds} constraints={preflightConstraints} stale={stale}

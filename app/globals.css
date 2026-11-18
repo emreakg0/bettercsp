@@ -72,7 +72,10 @@ dl { margin: 15px 0; } dl > div { margin-top: 14px; }dt { font-weight: 600; font
 .planner-course .course-note { font-size: 12px; padding: 15px 0; }
 .planner-course .meetings li > div { flex-wrap: wrap; }
 .planner-schedule > .results-heading:first-child { padding-top: 0; flex-wrap: wrap; }
-.planner-tabs { display: none; }
+.planner-tabs { display: flex; gap: 8px; margin-block: 16px; padding-block: 8px; position: sticky; z-index: 3; top: 0; background: var(--background); }
+.planner-tabs button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: white; font-size: 13px; }
+.planner-tabs button[aria-current="page"] { background: var(--accent); color: white; border-color: var(--accent); }
+.planner-shell :is(h2, h4, input, .selected-section, .academic-profile, summary) { scroll-margin-top: 70px; }
 .schedule-status { margin: 18px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
 .schedule-status ul { list-style: disc; padding-left: 18px; }
 .schedule-status p + p { margin-top: 10px; }
@@ -109,10 +112,6 @@ dl { margin: 15px 0; } dl > div { margin-top: 14px; }dt { font-weight: 600; font
 button:disabled { cursor: default; opacity: .6; }
 @media (max-width: 1000px) {
   .planner-workspace { grid-template-columns: 1fr; }
-  .planner-tabs { display: flex; gap: 8px; margin-top: 24px; }
-  .planner-tabs button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: white; }
-  .planner-tabs button[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
-  .show-courses .planner-schedule, .show-calendar .planner-courses { display: none; }
 }
 @media (max-width: 440px) {
   .site-header { gap: 12px; }
@@ -127,7 +126,7 @@ button:disabled { cursor: default; opacity: .6; }
 .schedule-generator h2 { margin-bottom: 8px; }
 .generator-choices { list-style: none; padding: 0; margin: 12px 0; }
 .generator-choices li { border-top: 1px solid var(--line); display: flex; align-items: center; gap: 18px; padding: 10px 0; font-size: 12px; }
-.generator-choices li > span { flex: 1; }
+.generator-choices li > div { flex: 1; min-width: 0; }
 .generator-choices label, .generation-checks label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
 .generator-choices input, .generation-checks input { width: 18px; min-height: 18px; accent-color: var(--accent); }
 .generation-preferences { margin: 15px 0; padding: 15px 18px; border: 1px solid var(--line); border-radius: 8px; background: white; }
@@ -152,7 +151,7 @@ button:disabled { cursor: default; opacity: .6; }
 .generation-results article { margin: 20px 0; scroll-margin-top: 20px; }.generation-results h4 { font-size: 13px; font-weight: 600; }
 textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 @media (max-width: 760px) {
-  .generator-choices li { flex-wrap: wrap; gap: 5px 16px; }.generator-choices li > span { flex-basis: 100%; }
+  .generator-choices li { flex-wrap: wrap; gap: 5px 16px; }.generator-choices li > div { flex-basis: 100%; }
   .generation-fields { grid-template-columns: 1fr; }.generation-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .generation-navigation, .generation-actions { flex-wrap: wrap; }.generation-preferences { padding: 12px; }
 }
@@ -173,13 +172,14 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .readiness-findings h4 { font-size: 12px; font-weight: 600; }.readiness-findings p { margin: 6px 0; overflow-wrap: anywhere; }
 .readiness-findings a { color: var(--accent); text-decoration: underline; }.readiness-findings summary { min-height: 44px; padding: 10px 0; font-size: 12px; }
 .rescue-panel { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 18px 22px; margin-top: 24px; }
-.rescue-panel > summary { cursor: pointer; min-height: 44px; padding: 8px 0; font-weight: 600; font-size: 15px; }
+.rescue-panel details > summary { cursor: pointer; min-height: 44px; padding: 10px 0; font-weight: 600; font-size: 13px; }
 .rescue-panel > p, .rescue-results > p { font-size: 13px; margin: 12px 0; }
 .rescue-panel h3 { font-size: 15px; margin-top: 18px; }.rescue-panel h4 { font-size: 13px; margin-top: 14px; font-weight: 600; }
 .rescue-panel fieldset { border: 0; margin: 18px 0; padding: 0; }.rescue-panel legend { font-size: 12px; font-weight: 600; }
 .rescue-results { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
 .availability-evidence { padding: 12px 16px; background: white; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
 .registration-report { display: block; font-size: 12px; margin: 12px 0; }.registration-report select { margin-top: 6px; }
+.registration-index { font-size: 12px; }.registration-index > [role="status"] { margin-inline-start: 4px; }
 .protection-overrides { border-left: 2px solid var(--accent); padding-left: 16px; margin-top: 18px; font-size: 13px; }
 @media (max-width: 760px) { .rescue-panel { padding: 12px; } }
 
@@ -191,15 +191,11 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .generator-choices small { display: block; color: var(--muted); margin-top: 4px; }
 .generator-choices details { max-width: 100%; }
 .generator-choices details label { display: flex; }
-.schedule-view-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
-.schedule-view-tabs button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: white; font-size: 12px; }
-.schedule-view-tabs button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .planner-workspace .schedule-generator { margin-top: 18px; }
 .planner-workspace .generation-results { margin-top: 0; }
 .planner-secondary { margin-top: 24px; }
 .saved-schedule .results-heading { flex-wrap: wrap; }
 .eligibility-settings { font-size: 12px; margin-block: 16px; }
-@media (min-width: 1001px) { .schedule-view-tabs { position: sticky; top: 0; background: var(--background); z-index: 3; padding-block: 8px; } }
 
 .planner-search-results { max-height: 360px; overflow-y: auto; padding-right: 8px; margin-top: 8px; }
 .planner-search-results:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
@@ -217,7 +213,6 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .result-preferences > summary { padding: 10px 0; font-size: 13px; }
 .generation-navigation .schedule-nav-button:hover:not(:disabled) { background: var(--accent); color: white; }
 
-.rescue-panel > summary { color: var(--accent); }
 .rescue-field { display: grid; gap: 6px; max-width: 520px; margin: 12px 0; font-weight: 600; }
 .rescue-field select { width: 100%; min-width: 0; font-weight: 400; }
 .rescue-panel > .button { margin-block: 12px; }

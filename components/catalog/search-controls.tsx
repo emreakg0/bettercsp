@@ -11,7 +11,20 @@ export function SearchControls({ query, subject, subjects, pathname = '/' }: {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const form = useRef<HTMLFormElement>(null);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => {
+    function restoreSearchFields(): void {
+      if (timer.current) clearTimeout(timer.current);
+      if (!form.current) return;
+      const params = new URLSearchParams(window.location.search);
+      (form.current.elements.namedItem('q') as HTMLInputElement).value = (params.get('q') ?? '').slice(0, 160);
+      (form.current.elements.namedItem('subject') as HTMLSelectElement).value = params.get('subject') ?? '';
+    }
+    window.addEventListener('popstate', restoreSearchFields);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      window.removeEventListener('popstate', restoreSearchFields);
+    };
+  }, []);
   // Keep browser back/forward navigation reflected in the uncontrolled form.
   useEffect(() => {
     if (!form.current || form.current.contains(document.activeElement)) return;
@@ -22,7 +35,7 @@ export function SearchControls({ query, subject, subjects, pathname = '/' }: {
   }, [query, subject]);
 
   function navigate(): void {
-    if (!form.current) return;
+    if (!form.current || form.current.closest('[hidden]')) return;
     const values = new FormData(form.current);
     const params = new URLSearchParams();
     const q = String(values.get('q') ?? '').trim();

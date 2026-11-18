@@ -386,22 +386,21 @@ Algorithm, availability evidence, performance, approval/undo guarantees, and unr
 recorded in [Registration Rescue](REGISTRATION_RESCUE.md). No WebReg transaction or monitoring exists.
 
 ## 9. Frontend Architecture and UX
-Implemented `/planner`: course search/selection beside a weekly calendar on desktop, with a
-course/calendar button switcher below 1000px. Existing catalog search controls and section disclosures
-are extended rather than duplicated. Calendar blocks link to selected section details; remove and
-replace preserve unrelated choices. The Course Explorer remains at `/`. Existing Geist typography,
-spacing, and components are retained; accent colors now use Rutgers scarlet (`#cc0033`).
-Schedule comparison, preference controls, readiness review, and explicit-approval Rescue are implemented.
-The primary workspace now uses one “Add course” action, a persistent generate action, and separate
-schedule-options/saved-schedule views. Search results scroll within the course pane. Four common
-preference toggles map to the existing weights; numeric weights, hard constraints, exclusions, and
-instructors remain under Advanced Preferences. Diagnostics and scoring explanations are collapsed.
-Academic information and Rescue appear below the workspace; failed/permission/verification reports
-also expose a contextual Rescue action. Serious readiness findings remain visible in previews and saves.
-Candidate choices remain session-only. Restored/manual selections become candidates with “Keep section”
-enabled; this is translated to the existing locked-section request field without changing the API or
-engine. Unchecking it explicitly permits generation to rearrange that section, while registered/manual
-locks still take precedence. Saved ID/report/lock formats and undo signatures remain unchanged.
+`/planner` exposes Build, My Schedule, and Rescue on both desktop and mobile. Build pairs catalog
+search and generation on wider screens and focuses the schedule preview after Generate on mobile.
+My Schedule holds the saved timetable, registration reports, undo and Preflight. A section's
+replacement action opens Rescue for that exact index. Applying a proposal returns to My Schedule.
+The `view` parameter and optional public section index participate in browser history. Plain
+catalog query URLs open Build. Switching destinations keeps the workspace mounted. Preference and
+eligibility details remain in disclosures. The Course Explorer remains at `/`.
+
+Candidate choices remain session-only. Ordinary restored sections are eligible to vary in previews.
+A manual pick can be kept for generation during the session, with a visible control to release
+unprotected pins. Registered sections and explicit locks are always sent as protected indexes.
+Removing a course from Build leaves any saved section intact and fixed in previews until edited
+in My Schedule. Generation results distinguish one verified compatible timetable, an available
+continuation, and a work or session limit. Saved ID/report/lock formats, undo signatures, and the
+signed discovery protocol stay unchanged.
 Use focused panels and progressive disclosure; avoid cluttered dashboards and unnecessary animation.
 Keep domain results outside rendering logic. Show loading, empty, failure, stale, and partial-result states.
 Provide keyboard controls, visible focus, semantic labels, accessible list alternatives to calendar drag,

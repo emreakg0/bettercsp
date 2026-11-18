@@ -16,7 +16,7 @@ export default async function PlannerPage({ searchParams }: {
   const result = searchCourses(catalog.courses, { query, subject, page: typeof params.page === 'string' ? Number(params.page) : 1 });
   const pageHref = (page: number): string => `/planner?${new URLSearchParams({ q: query, subject, page: String(page) })}`;
   return <main className="shell planner-shell">
-    <header className="intro"><h1>Build your semester.</h1></header>
+    <header className="intro"><h1>Schedule Planner</h1></header>
     <div className="catalog-context"><span>{catalogSource.label}</span><Link className="back-link" href="/">Browse Course Explorer ↗</Link></div>
     <p className="muted planner-source-note">Seat labels use a snapshot. Verify availability and eligibility with Rutgers; applying a plan does not register you.</p>
     <PlannerWorkspace sourceId={catalogSource.id} courses={result.courses.map(plannerCourse)}>
