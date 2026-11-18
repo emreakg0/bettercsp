@@ -61,41 +61,59 @@ try {
     await page.getByRole('button', { name: 'Next schedule →' }).click();
     assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
     const current = page.locator('.generation-navigation strong');
-    assert.equal(await current.textContent(), 'Schedule 2 of 10');
-    await page.getByRole('button', { name: 'Explore more schedules' }).click();
-    await current.filter({ hasText: 'Schedule 2 of 20' }).waitFor();
-    for (let step = 0; step < 9; step++) await page.getByRole('button', { name: 'Next schedule →' }).click();
-    assert.equal(await current.textContent(), 'Schedule 11 of 20');
+    assert.equal(await current.textContent(), 'Schedule 2 of 10 loaded');
+    const next = page.getByRole('button', { name: 'Next schedule →' });
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let requests = 0;
+    const delayFirst = async route => {
+      if (route.request().postDataJSON().discoveryCursor) {
+        requests++;
+        await gate;
+        await route.fulfill({ status: 503, json: { error: 'Test failure' } });
+      } else await route.continue();
+    };
+    await page.route('**/api/planner/generate', delayFirst);
+    for (let step = 2; step < 8; step++) await next.click();
+    await page.getByText('Loading next schedules…', { exact: true }).waitFor();
+    for (let step = 0; step < 5; step++) await next.click();
+    assert.equal(await current.textContent(), 'Schedule 10 of 10 loaded');
+    assert.equal(requests, 1);
+    release();
+    await page.getByRole('button', { name: 'Retry next batch' }).waitFor();
+    assert.equal(await current.textContent(), 'Schedule 10 of 10 loaded');
+    await page.unroute('**/api/planner/generate', delayFirst);
+    await page.getByRole('button', { name: 'Retry next batch' }).click();
+    await current.filter({ hasText: 'Schedule 11 of 20 loaded' }).waitFor();
+    const previous = page.getByRole('button', { name: '← Previous schedule' });
+    await previous.click();
+    assert.equal(await current.textContent(), 'Schedule 10 of 20 loaded');
+    assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
     if (result.discovery.resumable) {
-      let cursor = result.discovery.nextCursor;
-      const known = new Set(result.schedules.map(s => s.id));
-      const currentCalendar = await page.locator('.generation-results .week-calendar').innerText();
-      // Follow the API chain independently. This also checks retrying a token does not consume it.
-      const second = await page.request.post(`${origin}/api/planner/generate`, { data: { ...result.request, discoveryCursor: cursor } });
-      const secondPage = await second.json();
-      cursor = secondPage.discovery.nextCursor;
-      for (const schedule of secondPage.schedules) { assert.ok(!known.has(schedule.id)); known.add(schedule.id); }
-      for (let loaded = 30; loaded <= 70; loaded += 10) {
-        const response = page.waitForResponse(r => r.url().endsWith('/api/planner/generate') && r.request().method() === 'POST');
-        await page.getByRole('button', { name: 'Explore more schedules' }).click();
-        const answer = await response;
-        assert.equal(answer.status(), 200);
-        assert.equal(answer.request().postDataJSON().discoveryCursor, cursor);
-        const next = await answer.json();
-        cursor = next.discovery.nextCursor;
-        await current.filter({ hasText: `Schedule 11 of ${loaded}` }).waitFor();
-        assert.equal(await page.locator('.generation-results .week-calendar').innerText(), currentCalendar);
-        assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
-        for (const schedule of next.schedules) { assert.ok(!known.has(schedule.id)); known.add(schedule.id); }
-        if (loaded === 70) {
-          assert.ok(next.discovery.windowSteps > 0 && next.discovery.windowSteps <= 25000);
-          assert.ok(next.discovery.uniqueValid > result.discovery.uniqueValid);
+      const seenCursors = new Set();
+      const pages = [];
+      const record = response => {
+        const firstCursor = response.url().endsWith('/api/planner/generate') && response.request().postDataJSON()?.discoveryCursor;
+        if (firstCursor) {
+          assert.ok(!seenCursors.has(firstCursor));
+          seenCursors.add(firstCursor);
+          pages.push(response.json());
         }
+      };
+      page.on('response', record);
+      for (let target = 11; target <= 61; target++) {
+        await next.click();
+        await current.filter({ hasText: 'Schedule ' + target + ' of ' }).waitFor();
       }
-      const invalid = await page.request.post(`${origin}/api/planner/generate`, {
-        data: { ...result.request, discoveryCursor: cursor, weights: { ...result.request.weights, lateEvenings: 0 } },
-      });
-      assert.equal(invalid.status(), 409);
+      await current.filter({ hasText: 'Schedule 61 of 70 loaded' }).waitFor();
+      page.off('response', record);
+      const batches = await Promise.all(pages);
+      assert.equal(batches.length, 5);
+      assert.ok(batches.at(-1).discovery.windowSteps > 0);
+      assert.ok(batches.at(-1).discovery.uniqueValid > result.discovery.uniqueValid);
+      await previous.click();
+      assert.equal(await current.textContent(), 'Schedule 60 of 70 loaded');
+      assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
     }
     await page.getByRole('button', { name: 'Apply this schedule', exact: true }).click();
     await page.getByText('4 selected courses · 15 credits', { exact: true }).waitFor();
@@ -109,6 +127,27 @@ try {
       await optional.getByLabel('Required course', { exact: true }).uncheck();
       const alternative = await generate(page);
       assert.equal(alternative.request.choices.filter(c => !c.required).length, 1);
+      for (const outcome of ['expired', 'exhausted', 'limited']) {
+        const handler = async route => {
+          if (!route.request().postDataJSON().discoveryCursor) {
+            await route.fulfill({ json: { ...result, schedules: result.schedules.slice(0, 1) } });
+          } else if (outcome === 'expired') {
+            await route.fulfill({ status: 409, json: { error: 'Expired test cursor' } });
+          } else {
+            await route.fulfill({ json: { ...result, issues: [], schedules: [], truncated: outcome === 'limited',
+              discovery: { ...result.discovery, nextCursor: null, exhausted: outcome === 'exhausted', sessionLimited: outcome === 'limited' } } });
+          }
+        };
+        await page.route('**/api/planner/generate', handler);
+        await generate(page);
+        await current.filter({ hasText: 'Schedule 1 of 1 loaded' }).waitFor();
+        await next.click();
+        const message = { expired: /continuation expired or changed/, exhausted: /Search exhausted. All shortlisted/, limited: /reached its session limit/ }[outcome];
+        await page.getByText(message).first().waitFor();
+        assert.equal(await current.textContent(), 'Schedule 1 of 1 loaded');
+        assert.equal(await next.isDisabled(), true);
+        await page.unroute('**/api/planner/generate', handler);
+      }
     }
     assert.deepEqual(errors, []);
     assert.equal(result.schedules[0].selections.length, 4);

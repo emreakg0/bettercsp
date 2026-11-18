@@ -17,17 +17,23 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
 }) {
   const [excludeConfirmed, setExcludeConfirmed] = useState(false);
   const [pending, setPending] = useState<'initial' | 'more' | null>(null), [error, setError] = useState('');
+  const [pageError, setPageError] = useState<{ message: string; restart: boolean } | null>(null);
   const [response, setResponse] = useState<{ result: GenerationResult; basis: string; serial: number } | null>(null);
   const [applied, setApplied] = useState(false);
-  const controller = useRef<AbortController | null>(null), serial = useRef(0);
+  const controller = useRef<{ abort: AbortController; more: boolean } | null>(null), consumed = useRef<string | null>(null), serial = useRef(0);
   const basis = JSON.stringify({ choices, settings, profile, excludeConfirmed, selections: selections.map(s => s.section.id), locks });
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => controller.current?.abort.abort(), []);
+  useEffect(() => () => {
+    if (controller.current?.more) controller.current.abort.abort();
+  }, [basis, ready, scheduleView]);
   const campuses = [...new Set([...choices.flatMap(c => c.campuses), ...selections.flatMap(s => s.section.meetings.map(m => m.campus))].map(c => c.toUpperCase()))].filter(Boolean).sort();
   async function generate(more = false): Promise<void> {
     const cursor = more ? response?.result.discovery?.nextCursor : null;
-    if (!ready || pending || (more && (!cursor || response?.basis !== basis))) return;
-    controller.current?.abort();
-    const abort = new AbortController(); controller.current = abort;
+    if (!ready || pending || controller.current || (more && (!cursor || cursor === consumed.current || response?.basis !== basis))) return;
+    const abort = new AbortController();
+    controller.current = { abort, more };
+    setPageError(null);
+    if (!more) consumed.current = null;
     setPending(more ? 'more' : 'initial');
     setError('');
     if (!more) { setApplied(false); onViewChange('calendar'); onScheduleViewChange('results'); }
@@ -39,10 +45,16 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
         weights: settings.weights, preferredInstructors: settings.instructors.split('\n').map(s => s.trim()).filter(Boolean) };
       const request = await fetch('/api/planner/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: abort.signal });
       const body = await request.json();
+      if (more && request.status === 409 && !abort.signal.aborted) {
+        setPageError({ message: 'This continuation expired or changed. Generate schedules again to continue.', restart: true });
+        return;
+      }
       if (!request.ok) throw new Error(typeof body.error === 'string' ? body.error : 'Generation failed. Retry with fewer courses.');
       if (abort.signal.aborted) return;
       const result = body as GenerationResult;
       if (more) {
+        if (result.discovery?.nextCursor === cursor) throw new Error('The next batch did not advance. Please retry.');
+        consumed.current = cursor ?? null;
         setResponse(current => {
           if (current?.basis !== basis || current.result.discovery?.nextCursor !== cursor) return current;
           const seen = new Set(current.result.schedules.map(schedule => schedule.id));
@@ -51,8 +63,14 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
       } else {
         setResponse({ result, basis, serial: ++serial.current });
       }
-    } catch (err) { if (!abort.signal.aborted) setError(err instanceof Error ? err.message : 'Unable to generate. Check your connection and retry.'); }
-    finally { if (controller.current === abort) setPending(null); }
+    } catch (err) {
+      if (!abort.signal.aborted) {
+        if (more) setPageError({ message: 'Could not load the next batch. Your current schedule is still available.', restart: false });
+        else setError(err instanceof Error ? err.message : 'Unable to generate. Check your connection and retry.');
+      }
+    } finally {
+      if (controller.current?.abort === abort) { controller.current = null; setPending(null); }
+    }
   }
   return <>
     <div className="planner-workflow-actions"><span>{choices.length} {choices.length === 1 ? 'course' : 'courses'} added · up to 12</span>
@@ -97,8 +115,8 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
 
         {pending === 'initial' && <p role="status" className="muted">Finding schedules for your courses… Your saved schedule is unchanged.</p>}
         {!response && !pending && <div className="schedule-status"><h2>Schedule preview</h2><p>Add your courses, then choose “Generate schedules” to compare possible weeks. Your saved schedule will stay unchanged until you apply a result.</p></div>}
-        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && !pending} profile={profile} loadingMore={pending === 'more'}
-          canExplore={ready && !pending} onExplore={() => void generate(true)}
+        {response && <GenerationResults key={response.serial} result={response.result} stale={response.basis !== basis} canApply={ready && pending !== 'initial'} profile={profile} loadingMore={pending === 'more'}
+          canExplore={ready && pending !== 'initial'} pageError={pageError} onExplore={() => void generate(true)}
           onApply={schedule => { if (onApply(schedule, choices.map(c => c.courseId))) { setApplied(true); onScheduleViewChange('saved'); } }} />}
       </div>
       <div hidden={scheduleView !== 'saved'}>{applied && <p role="status">Applied to your saved schedule.</p>}{manualSchedule}</div>

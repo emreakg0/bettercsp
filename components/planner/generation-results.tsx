@@ -13,12 +13,24 @@ function Metrics({ schedule }: { schedule: RankedSchedule }) {
     <div><dt>Days on campus</dt><dd>{m.commuteDays}</dd></div></dl>;
 }
 // Ranked alternatives compose the existing calendar and section details, without changing the manual draft.
-export function GenerationResults({ result, stale, onApply, canApply, profile, loadingMore, canExplore, onExplore }: {
-  profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void;
+export function GenerationResults({ result, stale, onApply, canApply, profile, loadingMore, canExplore, pageError, onExplore }: {
+  profile: StudentProfile; result: GenerationResult; stale: boolean; onApply: (schedule: RankedSchedule) => void; canApply: boolean; loadingMore: boolean; canExplore: boolean; onExplore: () => void; pageError: { message: string; restart: boolean } | null;
 }) {
-  const [index, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
+  const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
+  const index = Math.max(0, Math.min(requestedIndex, result.schedules.length - 1));
   const schedule = result.schedules[index];
   const progress = result.discovery;
+  const hasMore = !!progress?.nextCursor && !stale && !pageError?.restart;
+  const atEnd = index >= result.schedules.length - 1;
+  function next(): void {
+    if (schedule && !atEnd) {
+      setIndex(index + 1);
+      if (hasMore && canExplore && !pageError && !loadingMore && index + 2 >= result.schedules.length - 2) onExplore();
+    } else if (hasMore && canExplore && !pageError) {
+      setIndex(result.schedules.length);
+      if (!loadingMore) onExplore();
+    }
+  }
   return <section className="generation-results" aria-label="Generated schedules">
     {result.truncated && <p role="status" className="snapshot-note">{progress?.sessionLimited
       ? 'This search reached its session limit. Unexplored combinations remain.'
@@ -29,19 +41,19 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
     {!schedule && <p className="muted">{progress?.nextCursor
       ? 'No schedules found yet. Continue searching the remaining combinations.'
       : 'No schedule was found. Review the reasons above, then adjust a constraint or change your course choices and generate again.'}</p>}
-    {schedule && <nav className="generation-navigation" aria-label="Generated schedule navigation">
+    {(schedule || hasMore) && <nav className="generation-navigation" aria-label="Generated schedule navigation">
         <button className="button schedule-nav-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>
-        <strong aria-live="polite">Schedule {index + 1} of {result.schedules.length}</strong>
-        <button className="button schedule-nav-button" disabled={index === result.schedules.length - 1} onClick={() => setIndex(index + 1)}>Next schedule →</button>
+        <strong aria-live="polite">{schedule ? `Schedule ${index + 1} of ${result.schedules.length} loaded` : '0 schedules loaded'}</strong>
+        <button className="button schedule-nav-button" disabled={atEnd && (!hasMore || !canExplore || !!pageError)} onClick={next}>Next schedule →</button>
       </nav>}
-      {loadingMore && <span role="status" className="sr-only">Loading more schedules.</span>}
-      {progress?.nextCursor
-        ? <button className="text-button" disabled={stale || !canExplore} onClick={onExplore}>{loadingMore ? 'Loading more schedules…' : 'Explore more schedules'}</button>
-        : schedule && <p className="muted">{result.truncated
-          ? 'All shortlisted schedules are loaded. Unexplored combinations remain.'
-          : progress?.uniqueValid !== progress?.retained
-            ? 'Search exhausted. All shortlisted schedules are loaded.'
-            : 'All schedules found are loaded.'}</p>}
+      {loadingMore && <p role="status" className="muted">Loading next schedules…</p>}
+      {!stale && pageError && <div role="alert" className="muted">{pageError.message}{!pageError.restart && hasMore
+        && <button className="text-button" disabled={!canExplore || loadingMore} onClick={onExplore}>Retry next batch</button>}</div>}
+      {!progress?.nextCursor && schedule && <p className="muted">{result.truncated
+        ? 'All shortlisted schedules are loaded. Unexplored combinations remain.'
+        : progress?.uniqueValid !== progress?.retained
+          ? 'Search exhausted. All shortlisted schedules are loaded.'
+          : 'All schedules found are loaded.'}</p>}
     {schedule && <>
       <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
       <Metrics schedule={schedule} />
