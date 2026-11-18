@@ -576,7 +576,7 @@ try {
     .map(n => n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4)
     .reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
   assert.ok(styling.every(item => (luminance(item.bg) + 0.05) / (luminance(item.text) + 0.05) >= 4.5));
-  assert.match(await blocks.last().innerText(), /Unverified site[\s\S]*Closed in snapshot/);
+  assert.match(await blocks.last().getAttribute('aria-label'), /Unverified site[\s\S]*closed in snapshot/);
   await blocks.first().focus();
   assert.equal(await blocks.first().evaluate(el => getComputedStyle(el).outlineStyle), 'solid');
   for (const mode of ['corrupt', 'blocked']) {

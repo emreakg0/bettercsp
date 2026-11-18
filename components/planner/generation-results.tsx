@@ -2,11 +2,13 @@ import { ReadinessFindings } from './registration-readiness';
 import type { StudentProfile } from '@/lib/eligibility/types';
 import { useRef, useState } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
-import { formatTime } from '@/lib/scheduling/meetings';
+import type { Meeting } from '@/lib/catalog/types';
+import { formatDay, formatTime } from '@/lib/scheduling/meetings';
 import { RegistrationPreflight } from './registration-preflight';
 import type { PlanningContext } from '@/lib/eligibility/preflight';
 import type { GenerationResult, HardConstraints, RankedSchedule } from '@/lib/scheduling/generation-types';
 import type { Selection } from '@/lib/scheduling/selection';
+import { RegistrationIndex } from './registration-index';
 import { WeeklyCalendar } from './weekly-calendar';
 
 function Metrics({ schedule }: { schedule: RankedSchedule }) {
@@ -24,7 +26,7 @@ export function GenerationResults({ result, stale, onApply, onSave, saveNotice, 
   emptyBatch: boolean; allFixed: boolean; onTryOtherSections?: () => void; onReviewSchedule: () => void;
 }) {
   const [fit, setFit] = useState(true);
-  const [inspected, setInspected] = useState<Selection | null>(null);
+  const [inspected, setInspected] = useState<{ selection: Selection; meeting: Meeting } | null>(null);
   const inspection = useRef<HTMLDialogElement>(null);
   const [requestedIndex, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const index = Math.max(0, Math.min(requestedIndex, result.schedules.length - 1));
@@ -70,17 +72,23 @@ export function GenerationResults({ result, stale, onApply, onSave, saveNotice, 
       </div>
       <p className="browse-feedback" role="status">{loadingMore ? 'Loading next schedules…' : saveNotice}</p>
     </div>
-    {schedule && <WeeklyCalendar selections={schedule.selections} idPrefix="generated" fit={fit} onInspect={selection => {
-      setInspected(selection);
+    {schedule && <WeeklyCalendar selections={schedule.selections} idPrefix="generated" fit={fit} onInspect={(selection, meeting) => {
+      setInspected({ selection, meeting });
       inspection.current?.showModal();
     }} />}
     <dialog ref={inspection} className="planner-dialog" aria-labelledby="meeting-inspection-title">
-      <h2 id="meeting-inspection-title">{inspected?.course.title ?? 'Section details'}</h2>
+      <h2 id="meeting-inspection-title">{inspected?.selection.course.title ?? 'Section details'}</h2>
       <form method="dialog"><button className="button">Close details</button></form>
       {inspected && <>
-        <p>{inspected.course.code} · Section {inspected.section.number} · Index {inspected.section.index}</p>
-        {inspected.course.prerequisites && <p>{inspected.course.prerequisites}</p>}
-        <SectionList sections={[inspected.section]} initiallyOpen />
+        <p>{inspected.selection.course.code} · Section {inspected.selection.section.number} · <RegistrationIndex key={inspected.selection.section.index} index={inspected.selection.section.index} /></p>
+        <div className="schedule-status">
+          <strong>Selected meeting · {inspected.meeting.mode || 'Meeting type not specified'}</strong>
+          <p>{formatDay(inspected.meeting.dayCode)} · {formatTime(inspected.meeting.startMinute)}–{formatTime(inspected.meeting.endMinute)}</p>
+          <p>{[inspected.meeting.campus, inspected.meeting.building, inspected.meeting.room].filter(Boolean).join(' · ') || 'Location not specified'}</p>
+        </div>
+        <p className="muted">Seat status reflects the Rutgers snapshot. Verify current availability with Rutgers.</p>
+        {inspected.selection.course.prerequisites && <p><strong>Prerequisites: </strong>{inspected.selection.course.prerequisites}</p>}
+        <SectionList sections={[inspected.selection.section]} initiallyOpen />
       </>}
     </dialog>
     {!stale && result.truncated && (progress?.sessionLimited || (!progress?.resumable && !hasMore)) && <p role="status" className="snapshot-note">{progress?.sessionLimited

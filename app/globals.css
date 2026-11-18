@@ -98,8 +98,23 @@ dl { margin: 15px 0; } dl > div { margin-top: 14px; }dt { font-weight: 600; font
 [data-campus="downtown"] { --campus-bg: #eee8f8; --campus-border: #7b649e; --campus-text: #48355f; }
 [data-campus="camden"] { --campus-bg: #f8e8ef; --campus-border: #9d5f7e; --campus-text: #602d48; }
 [data-campus="newark"] { --campus-bg: #e5ebf1; --campus-border: #63788c; --campus-text: #354656; }
-.calendar-event { position: absolute; border-left-width: 3px; border-radius: 4px; padding: 3px; overflow: auto; font-size: 11px; line-height: 1.35; }
-.calendar-event strong, .calendar-event span { display: block; overflow-wrap: anywhere; }
+.calendar-event { position: absolute; box-sizing: border-box; container-type: size; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; border-left-width: 3px; border-radius: 4px; padding: 1px 3px; overflow: hidden; text-align: left; font-family: inherit; font-size: 11px; line-height: 13px; white-space: nowrap; }
+.calendar-event > strong, .calendar-event-meeting > span, .calendar-event-instructor { overflow: hidden; text-overflow: ellipsis; }
+.calendar-event > * { flex: none; }
+.calendar-event-meeting, .calendar-event-instructor { display: none; }
+@container (min-height: 26px) and (min-width: 68px) {
+  .calendar-event-meeting { display: flex; gap: 4px; }
+  .calendar-event-meeting > span:first-child { flex: none; }
+  .calendar-event-meeting > span + span::before { content: "· "; }
+}
+@container (min-height: 39px) and (min-width: 68px) {
+  .calendar-event-instructor { display: flex; gap: 3px; }
+  .calendar-event-instructor > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .calendar-event-instructor > span + span { flex: none; }
+}
+@container (min-height: 52px) and (min-width: 68px) {
+  .calendar-event-meeting { flex-wrap: wrap; row-gap: 0; }
+}
 .calendar-event[data-closed="true"], .calendar-swatch[data-closed="true"] { outline: 2px dashed #a72b40; outline-offset: -2px; }
 .calendar-event:focus-visible, .calendar-event[data-closed="true"]:focus-visible { z-index: 2; outline: 3px solid #292526; outline-offset: 1px; }
 .calendar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; padding: 0; margin: 10px 0 16px; font-size: 11px; color: var(--muted); }
@@ -261,9 +276,6 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .calendar-fit { --fit-axis: max(340px, calc(100dvh - 226px)); }
 .calendar-fit .calendar-label { padding-block: 5px; }
 .calendar-fit .calendar-day { background: linear-gradient(to bottom, transparent calc(100% - 1px), var(--line) 0) 0 0 / 100% var(--hour-step); }
-.calendar-fit .calendar-event { overflow: hidden; text-align: left; font-size: 11px; white-space: nowrap; }
-.calendar-fit .calendar-event strong { line-height: 1.1; text-overflow: ellipsis; overflow: hidden; }
-.calendar-fit .calendar-event span { display: none; }
 .planner-dialog { margin: auto; width: min(560px, calc(100% - 28px)); max-height: 85dvh; overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--background); }
 .planner-dialog::backdrop { background: rgb(0 0 0 / .35); }
 #generated-preflight, .browse-toolbar :focus-visible { scroll-margin-top: 170px; }

@@ -1,10 +1,11 @@
+import type { Meeting } from '@/lib/catalog/types';
 import type { CSSProperties } from 'react';
 import { calendarCampus, calendarCampuses } from '@/lib/catalog/calendar-campus';
 import { formatDay, formatTime, isScheduled, weekDays } from '@/lib/scheduling/meetings';
 import type { Selection } from '@/lib/scheduling/selection';
 
 // No calendar primitive exists; this view positions every normalized meeting independently.
-export function WeeklyCalendar({ selections, idPrefix = 'selected', fit = false, onInspect }: { selections: Selection[]; idPrefix?: string; fit?: boolean; onInspect?: (selection: Selection) => void }) {
+export function WeeklyCalendar({ selections, idPrefix = 'selected', fit = false, onInspect }: { selections: Selection[]; idPrefix?: string; fit?: boolean; onInspect?: (selection: Selection, meeting: Meeting) => void }) {
   const events = selections.flatMap(item => item.section.meetings.flatMap((meeting, i) =>
     isScheduled(meeting) ? [{ ...item, meeting, campus: calendarCampus(meeting.campus), key: `${item.section.id}:${i}` }] : []));
   const start = Math.min((onInspect ? 7 : 8) * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
@@ -41,16 +42,26 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected', fit = false,
               laneEnds[lane] = event.meeting.endMinute;
               return { event, lane };
             });
-            return placed.map(({ event, lane }) => <Event key={event.key} href={onInspect ? undefined : `#${idPrefix}-${event.section.index}`}
-              onClick={onInspect ? () => onInspect(event) : undefined} type={onInspect ? 'button' : undefined}
-              aria-label={fit ? `${event.course.title}, section ${event.section.number}, ${formatDay(day)} ${formatTime(event.meeting.startMinute)} to ${formatTime(event.meeting.endMinute)}, ${event.meeting.campus || 'campus unknown'}${event.section.availability === 'closed' ? ', closed in snapshot' : ''}` : undefined}
-              className="calendar-event" data-campus={event.campus} data-closed={event.section.availability === 'closed' || undefined} style={{ top: percent(event.meeting.startMinute - start),
-                height: percent(event.meeting.endMinute - event.meeting.startMinute), left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
-              <strong>{event.course.code}{!fit && <> · {event.campus === 'other' ? event.meeting.campus || 'Unknown campus' : calendarCampuses[event.campus]}</>}</strong>
-              {event.section.availability === 'closed' && <span>Closed in snapshot</span>}<span>{event.meeting.mode || 'Meeting'} · {event.section.number}</span>
-              <span>{formatTime(event.meeting.startMinute)}–{formatTime(event.meeting.endMinute)}</span>
-              <span>{[event.meeting.building, event.meeting.room].filter(Boolean).join(' · ')}</span>
-            </Event>);
+            return placed.map(({ event, lane }) => {
+              const campus = event.campus === 'other' ? event.meeting.campus || 'Campus unknown' : calendarCampuses[event.campus];
+              const startTime = formatTime(event.meeting.startMinute);
+              const endTime = formatTime(event.meeting.endMinute);
+              const timeRange = `${startTime.slice(-2) === endTime.slice(-2) ? startTime.slice(0, -3) : startTime}–${endTime}`;
+              const instructors = event.section.instructors.map(name => name.trim()).filter(name =>
+                name && !/^(?:staff|t\.?b\.?[ad]\.?|to be (?:announced|assigned|determined)|unassigned|unknown|n\/a|not (?:assigned|listed)|arranged)$/i.test(name));
+              const closed = event.section.availability === 'closed';
+              return <Event key={event.key} href={onInspect ? undefined : `#${idPrefix}-${event.section.index}`}
+                onClick={onInspect ? () => onInspect(event, event.meeting) : undefined} type={onInspect ? 'button' : undefined}
+                aria-label={`${event.course.title}, section ${event.section.number}, ${formatDay(day)} ${startTime} to ${endTime}, ${campus}${event.meeting.mode ? ', ' + event.meeting.mode : ''}${closed ? ', closed in snapshot' : ''}`}
+                className="calendar-event" data-campus={event.campus} data-closed={closed || undefined} style={{ top: percent(event.meeting.startMinute - start),
+                  height: percent(event.meeting.endMinute - event.meeting.startMinute), left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
+                <strong>{event.course.title}</strong>
+                <span className="calendar-event-meeting"><span>{timeRange}</span><span>{campus}</span></span>
+                {!!instructors.length && <span className="calendar-event-instructor">
+                  <span>{instructors[0]}</span>{instructors.length > 1 && <span> +{instructors.length - 1}</span>}
+                </span>}
+              </Event>;
+            });
           })}
         </div>;
       })}

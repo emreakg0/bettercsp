@@ -5,6 +5,7 @@ const origin = process.env.PLANNER_URL || 'http://localhost:3000';
 try {
   for (const [width, height] of [[1440, 900], [1366, 768], [390, 844]]) {
     const page = await browser.newPage({ viewport: { width, height } });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(origin);
     await page.evaluate(() => {
       const sourceId = '2027-1-NB';
@@ -32,12 +33,22 @@ try {
     }
     await toolbar.press('ArrowLeft');
     await toolbar.getByText(/^Schedule 19 of /).waitFor();
-    const event = calendar.locator('.calendar-event').first();
+    const blocks = calendar.locator('.calendar-event');
+    assert.ok(await blocks.count() > 0);
+    for (const block of await blocks.all()) {
+      assert.doesNotMatch(await block.locator('strong').textContent(), /^\d{2}:\d{3}:\d{3}/);
+    }
+    const event = blocks.first();
     await event.press('Enter');
     const details = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: 'Close details' }) });
-    await details.getByText(/Registration index/).first().waitFor();
+    await details.getByText(/Selected meeting/).waitFor();
+    const copy = details.getByRole('button', { name: /Copy registration index/ });
+    await copy.click();
+    const index = (await copy.getAttribute('aria-label')).split(' ').at(-1);
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), index);
     await page.keyboard.press('Escape');
     assert.equal(await details.isVisible(), false);
+    assert.ok(await event.evaluate(el => el === document.activeElement));
     assert.equal(await page.evaluate(() => window.scrollY), scroll);
     for (const name of ['Morning plan', 'Alternate week', 'Backup plan']) {
       await page.getByRole('button', { name: 'Save as new named schedule' }).click();
@@ -56,7 +67,7 @@ try {
     await toolbar.getByText(/^Schedule 19 of /).waitFor();
     await page.evaluate(() => {
       const sourceId = '2027-1-NB';
-      const sectionIds = ['14413', '14786'].map(index => sourceId + ':' + index);
+      const sectionIds = ['14413', '14786', '15897'].map(index => sourceId + ':' + index);
       localStorage.setItem('bettercsp:planner:v1:' + sourceId, JSON.stringify({ version: 1, sourceId, sectionIds, lockedSectionIds: sectionIds }));
     });
     await page.reload();
@@ -69,6 +80,42 @@ try {
       const positioned = await block.evaluate(el => el.offsetTop >= 0 && el.offsetTop + el.offsetHeight <= el.parentElement.offsetHeight + 1);
       assert.ok(positioned);
     }
+    await page.setViewportSize({ width, height: 630 });
+    assert.ok(await late.locator('strong').isVisible());
+    assert.equal(await late.locator('.calendar-event-meeting').isVisible(), false);
+    await page.setViewportSize({ width, height });
+
+    const calc = calendar.getByRole('button', { name: /multivariable calc.*Livingston.*RECIT/i });
+    assert.equal(await calc.getAttribute('data-closed'), 'true');
+    assert.match(await calc.getAttribute('aria-label'), /closed in snapshot/);
+    await calc.click();
+    await details.getByText('Selected meeting · RECIT', { exact: true }).waitFor();
+    await details.getByText(/Tue · 12:10 PM–1:30 PM/).waitFor();
+    await details.locator('.schedule-status').getByText(/LIVINGSTON/i).waitFor();
+    assert.equal(await calc.locator('.calendar-event-instructor').count(), 0);
+    await page.keyboard.press('Escape');
+
+    await page.evaluate(() => {
+      const sourceId = '2027-1-NB';
+      const sectionIds = ['13363', '15523', '17850', '14413'].map(index => sourceId + ':' + index);
+      localStorage.setItem('bettercsp:planner:v1:' + sourceId, JSON.stringify({ version: 1, sourceId, sectionIds }));
+    });
+    await page.reload();
+    await page.getByRole('navigation', { name: 'Planner workspace' }).getByRole('button', { name: 'My Schedule', exact: true }).click();
+    const draft = page.locator('.calendar-scroll:visible');
+    const aural = draft.getByRole('link', { name: /aural skills.*8:30 AM to 9:30 AM/i }).first();
+    await aural.locator('.calendar-event-meeting').waitFor();
+    const medium = draft.getByRole('link', { name: /topics in korean studies.*Mon/i });
+    assert.match(await medium.locator('.calendar-event-meeting').innerText(), /1:05–1:55 PM.*Online/s);
+    const seminar = draft.getByRole('link', { name: /byrne first year seminars/i });
+    const overlaps = draft.getByRole('link', { name: /topics in korean studies.*Wed/i });
+    assert.equal(await seminar.getAttribute('data-campus'), 'cook-douglass');
+    assert.match(await seminar.locator('.calendar-event-instructor').textContent(), /\+1/);
+    const [left, right] = await Promise.all([seminar.boundingBox(), overlaps.boundingBox()]);
+    assert.ok(left.x + left.width <= right.x + 1);
+    assert.equal(await overlaps.locator('.calendar-event-meeting').isVisible(), false);
+    const longTitle = overlaps.locator('strong');
+    assert.ok(await longTitle.evaluate(el => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis'));
     console.log(`PASS ${width}×${height}: calendar fit, 20 schedules, stable viewport, keyboard, details, 3 gallery saves, and return to Build.`);
     await page.close();
   }
