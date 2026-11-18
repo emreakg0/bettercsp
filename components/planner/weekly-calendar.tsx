@@ -1,10 +1,11 @@
+import { calendarCampus, calendarCampuses } from './calendar-campus';
 import { formatDay, formatTime, isScheduled, weekDays } from '@/lib/scheduling/meetings';
 import type { Selection } from '@/lib/scheduling/selection';
 
 // No calendar primitive exists; this view positions every normalized meeting independently.
 export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selections: Selection[]; idPrefix?: string }) {
   const events = selections.flatMap(item => item.section.meetings.flatMap((meeting, i) =>
-    isScheduled(meeting) ? [{ ...item, meeting, key: `${item.section.id}:${i}` }] : []));
+    isScheduled(meeting) ? [{ ...item, meeting, campus: calendarCampus(meeting.campus), key: `${item.section.id}:${i}` }] : []));
   const start = Math.min(8 * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
   const end = Math.max(20 * 60, ...events.map(e => Math.ceil(e.meeting.endMinute / 60) * 60));
   const hours = Array.from({ length: (end - start) / 60 + 1 }, (_, i) => start + i * 60);
@@ -37,15 +38,23 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selectio
               return { event, lane };
             });
             return placed.map(({ event, lane }) => <a key={event.key} href={`#${idPrefix}-${event.section.index}`}
-              className="calendar-event" style={{ top: event.meeting.startMinute - start,
+              className="calendar-event" data-campus={event.campus} data-closed={event.section.availability === 'closed' || undefined} style={{ top: event.meeting.startMinute - start,
                 height: event.meeting.endMinute - event.meeting.startMinute, left: `${lane * 100 / laneEnds.length}%`, width: `${100 / laneEnds.length}%` }}>
-              <strong>{event.course.code}</strong><span>{event.meeting.mode || 'Meeting'} · {event.section.number}</span>
+              <strong>{event.course.code} · {event.campus === 'other' ? event.meeting.campus || 'Unknown campus' : calendarCampuses[event.campus]}</strong>
+              {event.section.availability === 'closed' && <span>Closed in snapshot</span>}<span>{event.meeting.mode || 'Meeting'} · {event.section.number}</span>
               <span>{formatTime(event.meeting.startMinute)}–{formatTime(event.meeting.endMinute)}</span>
-              <span>{[event.meeting.campus, event.meeting.building, event.meeting.room].filter(Boolean).join(' · ') || 'Location unspecified'}</span>
+              <span>{[event.meeting.building, event.meeting.room].filter(Boolean).join(' · ')}</span>
             </a>);
           })}
         </div>;
       })}
     </div>
-  </div></>;
+  </div>
+    {!!events.length && <ul className="calendar-legend" aria-label="Calendar campus and availability legend">
+      {Object.entries(calendarCampuses).map(([campus, label]) => <li key={campus}>
+        <span className="calendar-swatch" data-campus={campus} aria-hidden="true" />{label}
+      </li>)}
+      <li><span className="calendar-swatch" data-closed="true" aria-hidden="true" />Closed in snapshot · verify current availability</li>
+    </ul>}
+  </>;
 }

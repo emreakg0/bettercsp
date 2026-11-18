@@ -83,9 +83,25 @@ dl { margin: 15px 0; } dl > div { margin-top: 14px; }dt { font-weight: 600; font
 .hour-axis span { position: absolute; left: 5px; transform: translateY(-50%); background: white; }
 .hour-axis span:first-child { transform: none; }
 .calendar-day { position: relative; border-left: 1px solid var(--line); background: repeating-linear-gradient(to bottom, transparent 0, transparent 59px, var(--line) 59px, var(--line) 60px); }
-.calendar-event { position: absolute; border: 1px solid #d6a4b0; border-left: 3px solid var(--accent); background: #fbeaf0; border-radius: 4px; padding: 3px; overflow: auto; font-size: 11px; line-height: 1.35; color: #65001a; }
+.calendar-event, .calendar-swatch {
+  background: var(--campus-bg, #f0eeed); border: 1px solid var(--campus-border, #756f6c);
+  color: var(--campus-text, #393533);
+}
+[data-campus="online"] { --campus-bg: #fae9e6; --campus-border: #a95b51; --campus-text: #652e27; }
+[data-campus="busch"] { --campus-bg: #e3f0fa; --campus-border: #527da5; --campus-text: #284865; }
+[data-campus="college-avenue"] { --campus-bg: #faf1d5; --campus-border: #8e732f; --campus-text: #514114; }
+[data-campus="cook-douglass"] { --campus-bg: #e5f1e3; --campus-border: #597e53; --campus-text: #304b2d; }
+[data-campus="livingston"] { --campus-bg: #faeadb; --campus-border: #9c6845; --campus-text: #603c25; }
+[data-campus="downtown"] { --campus-bg: #eee8f8; --campus-border: #7b649e; --campus-text: #48355f; }
+[data-campus="camden"] { --campus-bg: #f8e8ef; --campus-border: #9d5f7e; --campus-text: #602d48; }
+[data-campus="newark"] { --campus-bg: #e5ebf1; --campus-border: #63788c; --campus-text: #354656; }
+.calendar-event { position: absolute; border-left-width: 3px; border-radius: 4px; padding: 3px; overflow: auto; font-size: 11px; line-height: 1.35; }
 .calendar-event strong, .calendar-event span { display: block; overflow-wrap: anywhere; }
-.calendar-event:focus-visible { z-index: 2; }
+.calendar-event[data-closed="true"], .calendar-swatch[data-closed="true"] { outline: 2px dashed #a72b40; outline-offset: -2px; }
+.calendar-event:focus-visible, .calendar-event[data-closed="true"]:focus-visible { z-index: 2; outline: 3px solid #292526; outline-offset: 1px; }
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; padding: 0; margin: 10px 0 16px; font-size: 11px; color: var(--muted); }
+.calendar-legend li { display: inline-flex; gap: 5px; align-items: center; }
+.calendar-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
 .selected-section { padding: 18px 0; border-top: 1px solid var(--line); scroll-margin-top: 20px; }
 .selected-section h3 { font-size: 13px; }
 .text-button { background: none; border: none; color: var(--accent); font-size: 12px; min-height: 44px; padding: 8px 0; text-align: left; text-decoration: underline; }

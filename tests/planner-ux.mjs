@@ -57,6 +57,7 @@ try {
     assert.equal(await page.getByText('Class days', { exact: true }).first().isVisible(), true);
     assert.equal(await page.getByText(/search steps\./).isVisible(), false);
     assert.equal(await page.locator('.generation-results .week-calendar').isVisible(), true);
+    assert.equal(await page.locator('.generation-results .calendar-legend li').count(), 10);
     await page.getByRole('button', { name: 'Pin this schedule for comparison' }).click();
     await page.getByRole('button', { name: 'Next schedule →' }).click();
     assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
@@ -117,6 +118,7 @@ try {
     }
     await page.getByRole('button', { name: 'Apply this schedule', exact: true }).click();
     await page.getByText('4 selected courses · 15 credits', { exact: true }).waitFor();
+    await page.locator('#manual-schedule .calendar-legend').waitFor();
     assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key)).sectionIds.length, 4);
     await page.getByRole('button', { name: 'Restore pre-generation schedule' }).click();
     await page.getByText('0 selected courses · 0 credits', { exact: true }).waitFor();
@@ -183,6 +185,8 @@ try {
   await rescue.getByLabel('Try a server-side SOC check', { exact: false }).uncheck();
   await rescue.getByRole('button', { name: 'Find minimum-change repairs', exact: true }).click();
   await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
+  await rescue.locator('.calendar-event[data-campus]').first().waitFor();
+  await rescue.getByRole('list', { name: 'Calendar campus and availability legend' }).waitFor();
   const applyRepair = rescue.getByRole('button', { name: 'Apply approved repair', exact: true });
   assert.equal(await applyRepair.isDisabled(), true);
   await page.locator(`#selected-${calculus.sections[0].index} .registration-report select`).selectOption('needs-verification');
@@ -214,5 +218,30 @@ try {
   assert.equal(await routine.filter({ has: page.getByText(/^Confirm prerequisites, placement/) }).locator(':scope > p').first().isVisible(), false);
   await page.getByRole('button', { name: `Review recovery options for ${calculus.code}`, exact: true }).click();
   assert.equal(await page.locator('#rescue-panel').getAttribute('open'), '');
+  const sites = ['ONL', 'BUS', 'CAC', 'DOUGLAS/COOK', 'LIV', 'DNB', 'Rutgers–Camden', 'Rutgers–Newark', 'Unverified site'];
+  const colors = ['online', 'busch', 'college-avenue', 'cook-douglass', 'livingston', 'downtown', 'camden', 'newark', 'other'];
+  const meeting = calculus.sections[0].meetings[0];
+  const meetings = sites.map((campus, i) => ({ ...meeting, campus, timing: 'scheduled', dayCode: 'M', startMinute: 480 + i * 60, endMinute: 537 + i * 60 }));
+  meetings.push({ ...meeting, campus: 'ONLINE', timing: 'asynchronous', startMinute: null, endMinute: null });
+  await page.route('**/api/planner/sections?*', route => route.fulfill({ json: { selections: [
+    { course: calculus, section: { ...calculus.sections[0], meetings, availability: 'closed' } },
+  ] } }));
+  await seed(page, [calculus.sections[0]]);
+  const blocks = page.locator('#manual-schedule .calendar-event');
+  assert.equal(await blocks.count(), 9);
+  const styling = await blocks.evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element);
+    return { campus: element.dataset.campus, outline: style.outlineStyle, bg: style.backgroundColor, text: style.color };
+  }));
+  assert.deepEqual(styling.map(item => item.campus), colors);
+  assert.ok(styling.every(item => item.outline === 'dashed'));
+  assert.equal(new Set(styling.map(item => item.bg)).size, 9);
+  const luminance = rgb => rgb.match(/\d+/g).map(Number).map(n => n / 255)
+    .map(n => n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+  assert.ok(styling.every(item => (luminance(item.bg) + 0.05) / (luminance(item.text) + 0.05) >= 4.5));
+  assert.match(await blocks.last().innerText(), /Unverified site[\s\S]*Closed in snapshot/);
+  await blocks.first().focus();
+  assert.equal(await blocks.first().evaluate(el => getComputedStyle(el).outlineStyle), 'solid');
   console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, contextual Rescue consent/undo, optional registration settings.');
 } finally { await browser.close(); }

@@ -1,3 +1,4 @@
+import { calendarCampus } from '../../components/planner/calendar-campus.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -126,4 +127,22 @@ test('selected credit totals use real catalog values and leave arranged credits 
   assert.equal(selectedCreditsLabel([{ id: 'zero', credits: 0 }]), '0 credits');
   assert.equal(selectedCreditsLabel([{ id: 'one', credits: 1 }]), '1 credit');
   assert.equal(selectedCreditsLabel([{ id: 'half', credits: 1.5 }, { id: 'other', credits: 2 }]), '3.5 credits');
+});
+
+
+test('calendar palette recognizes campus names and snapshot aliases without guessing unfamiliar sites', () => {
+  const pairs = {
+    online: ['ONLINE', 'ONL', 'O'],
+    busch: [' Busch Campus ', 'BUS', '2'],
+    'college-avenue': ['College Ave.', 'CAC', '1'],
+    'cook-douglass': ['DOUGLAS/COOK', 'Cook-Douglass', 'D/C', '4'],
+    livingston: ['Livingston Campus', 'LIV', '3'],
+    downtown: ['DOWNTOWN NB', 'DNB', '5'],
+    camden: ['Rutgers–Camden', 'Camden Campus'],
+    newark: ['Rutgers University–Newark', 'Newark'],
+    other: ['', 'CAMDEN COUNTY COLLEGE', 'OFF CAMPUS', 'STUDY ABROAD', 'Newark Extension'],
+  };
+  for (const [campus, names] of Object.entries(pairs)) {
+    for (const name of names) assert.equal(calendarCampus(name), campus, name);
+  }
 });
