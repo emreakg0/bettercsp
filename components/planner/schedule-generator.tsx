@@ -51,8 +51,8 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
     <p className="muted">Unchecked: retain with warnings. Unknown eligibility, ambiguous codes, and permission requirements are never silently excluded by this option. Locks remain fixed; an incompatible locked section may prevent results.</p>
     <GenerationControls value={settings} onChange={onSettingsChange} campuses={campuses} />
     <p className="muted">Manual courses outside this list stay fixed during generation. Lock a manual section below to keep that exact index. Arranged, unknown-time, and inconsistent-time sections are excluded from generated results; they remain available for manual planning.</p>
-    <p className="muted">All results need registration review: separately required courses and eligibility are not automatically verified. Closed snapshot sections remain planning alternatives.</p>
-    {!ready && <p role="status" className="muted">Load or resolve your saved sections before generating.</p>}
+    <p className="muted">Timetable results do not guarantee registration. Review eligibility restrictions below; separately registered required components still need Rutgers confirmation. Seat labels come from a snapshot, so check current availability in SOC and WebReg.</p>
+    {!ready && <p role="status" className="muted">Resolve saved-section or earlier registration-report notices in your manual schedule before generating.</p>}
     <button className="button" disabled={!ready || pending || (!choices.length && !locks.length)} onClick={() => void generate()}>{pending ? 'Generating schedules…' : 'Generate schedules'}</button>
     {error && <p role="alert" className="snapshot-note">{error} Your manual schedule is unchanged.</p>}
     {applied && <p role="status">Applied to your manual schedule below.</p>}

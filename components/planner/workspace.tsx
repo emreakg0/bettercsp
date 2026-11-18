@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { SectionList } from '@/components/catalog/section-list';
 import { findConflicts, formatDay, formatTime, needsTimingVerification } from '@/lib/scheduling/meetings';
-import { readSavedIds, readSavedLocks, applyGenerated, selectSection, storageKey, type PlannerCourse, type Selection } from '@/lib/scheduling/selection';
+import { readSavedIds, readSavedLocks, selectedCreditsLabel, applyGenerated, selectSection, storageKey, type PlannerCourse, type Selection } from '@/lib/scheduling/selection';
 import { WeeklyCalendar } from './weekly-calendar';
 import { ScheduleGenerator, type GeneratorChoice } from './schedule-generator';
 import { AcademicProfile } from './academic-profile';
@@ -35,10 +35,13 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<'courses' | 'calendar'>('courses');
   const key = storageKey(sourceId);
+  const [showGuide, setShowGuide] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
     async function restore(): Promise<void> {
+      try { setShowGuide(localStorage.getItem('bettercsp:planner:guide:v1') !== 'dismissed'); }
+      catch { /* Guidance stays available when browser storage is blocked. */ }
       try {
         const saved = localStorage.getItem(key);
         const ids = readSavedIds(saved, sourceId);
@@ -106,6 +109,11 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
     } catch (err) { setApplyError(err instanceof Error ? err.message : 'Repair could not be applied. Search again.'); return false; }
   }
   return <>
+    {showGuide && <aside className="schedule-status" aria-label="Planner quick start">
+      <strong>Start with a few courses.</strong>
+      <p>Search below, open a course, and choose “Include in generator”. Set your preferences, then choose “Generate schedules”. Compare the results and choose “Apply this schedule” to save your preferred one to the planner. For a specific section, use “Add section to schedule” instead.</p>
+      <button className="text-button" onClick={() => { setShowGuide(false); try { localStorage.setItem('bettercsp:planner:guide:v1', 'dismissed'); } catch { /* Dismissal still works for this visit. */ } }}>Dismiss quick start</button>
+    </aside>}
     <RescuePanel sourceId={sourceId} draft={draft} profile={profile} settings={settings} ready={canGenerate} onApply={acceptRepair} />
     <AcademicProfile profile={profile} onChange={setProfile} />
     <ScheduleGenerator sourceId={sourceId} choices={choices} onChoicesChange={setChoices} selections={selections} locks={effectiveLocks}
@@ -140,6 +148,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       </section>
       <section id="manual-schedule" className="planner-schedule" aria-label="Your weekly schedule">
         <div className="results-heading"><h2>Your week <span className="count">{selections.length}</span></h2><p role="status">{saveStatus}</p></div>
+        <p className="muted" aria-live="polite">{selections.length} selected {selections.length === 1 ? 'course' : 'courses'} · {selectedCreditsLabel(selections.map(s => s.course))}{missing.length ? ' · Totals exclude unresolved saved sections below.' : ''}</p>
         {applyError && <p role="alert">{applyError}</p>}
         <button className="text-button" onClick={openRescue}>Rescue schedule</button>
         {backup && <button className="text-button" disabled={draftSignature(draft) !== backup.afterSignature} onClick={() => { const before = undoRepair(draft, backup.before, backup.afterSignature); setSelections(before.selections); setLocks(before.locks); setStatuses(before.statuses); setBackup(null); }}>{backup.label}</button>}
@@ -153,7 +162,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
               const b = selections.find(s => s.section.id === conflict.secondId)!;
               const meeting = a.section.meetings[conflict.firstMeeting];
               return <li key={i}>{a.course.code} ({a.section.number}) overlaps {b.course.code} ({b.section.number}) on {formatDay(meeting.dayCode)}, {formatTime(meeting.startMinute)}–{formatTime(meeting.endMinute)}. Remove or replace a section below.</li>;
-            })}</ul></> : <p>{selections.length ? 'No overlaps found among known meeting times.' : 'Your schedule starts here. Find a course and add a section.'}</p>}
+            })}</ul></> : <p>{selections.length ? 'Timetable: no overlaps found among known meeting times. Eligibility and seat availability are checked separately.' : 'Your schedule is empty. Search for a course and add a section, or include courses in the generator and apply a result.'}</p>}
           {!!asynchronous.length && <p>Asynchronous content: {asynchronous.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. No required weekly meeting time; not placed on the calendar. Allow time for coursework and check assessment requirements.</p>}
           {!!arranged.length && <p>Hours by arrangement: {arranged.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. Coordinate meetings with the instructor after registration; overlaps cannot be checked until times are known.</p>}
           {!!unresolved.length && <p>Timing needs verification: {unresolved.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. These meetings cannot be checked or placed on the calendar. Confirm with Rutgers.</p>}
@@ -161,6 +170,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
         <WeeklyCalendar selections={selections} />
         <RegistrationReadiness selections={selections} profile={profile} />
         <div className="results-heading"><h2>Selected sections</h2></div>
+        {!selections.length && <p className="muted">Add a section from course search, or apply a generated schedule. Your selected sections and registration reports will appear here.</p>}
         {selections.map(({ course, section }) => <article className="selected-section" key={section.id} id={`selected-${section.index}`}>
           <h3>{course.code} · {course.title}</h3><p className="muted">{course.creditsLabel}</p>
           <label className="registration-report">Registration report · index {section.index}<select value={statuses[section.id] ?? 'planned'} onChange={e => setStatuses(current => ({ ...current, [section.id]: e.target.value as RegistrationStatuses[string] }))}>{Object.entries(registrationLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>

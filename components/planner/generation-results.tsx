@@ -28,6 +28,7 @@ export function GenerationResults({ result, stale, onApply, canApply, profile }:
       {report.code}: {report.candidates} of {report.total} sections available to the solver.
       {Object.entries(report.exclusions).map(([reason, count]) => ` ${reason}: ${count}.`).join('')}
     </p>)}{result.reports.map(report => !!report.eligibilityExclusions?.length && <details key={report.courseId}><summary>{report.code}: excluded eligibility mismatches (up to 20 shown)</summary>{report.eligibilityExclusions.map(item => <div key={item.index}><h4>Index {item.index}</h4><ReadinessFindings findings={item.findings} /></div>)}</details>)}</details>
+    {!schedule && <p className="muted">No schedule was found in this search. Review the reasons above, then adjust a hard constraint, unlock a section if appropriate, or change your course choices and generate again.</p>}
     {schedule && <>
       <nav className="generation-navigation" aria-label="Generated schedule navigation">
         <button className="text-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>

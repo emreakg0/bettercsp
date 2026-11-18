@@ -19,7 +19,7 @@ export function RegistrationReadiness({ selections, profile }: { selections: Sel
   const assessments = selections.map(selection => ({ ...selection, result: evaluateEligibility(selection.course, selection.section, profile) })).sort((a, b) => eligibilityPriority.indexOf(a.result.status) - eligibilityPriority.indexOf(b.result.status));
   const actionable = assessments.filter(a => a.result.status !== 'no-known-blocker').length;
   return <section className="registration-readiness" aria-label="Registration readiness">
-    <h3>Registration readiness</h3><p className="muted">{actionable} of {assessments.length} sections need review. These are limited checks against self-reported facts and snapshot metadata; WebReg makes the final decision. Seat availability and timetable feasibility are separate.</p>
+    <h3>Registration readiness</h3><p className="muted">{actionable} of {assessments.length} {assessments.length === 1 ? 'section needs' : 'sections need'} eligibility review. These are limited checks against self-reported facts and snapshot metadata; WebReg makes the final decision. Seat availability and timetable feasibility are separate.</p>
     {assessments.map(({ course, section, result }) => {
       const unresolved = result.findings.filter(f => f.status !== 'no-known-blocker'), met = result.findings.filter(f => f.status === 'no-known-blocker');
       return <details className={`readiness-section readiness-${result.status}`} key={section.id} open={result.status === 'permission-required' || result.status === 'potentially-ineligible'}>

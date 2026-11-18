@@ -30,9 +30,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <a className="skip-link" href="#content">Skip to content</a>
-        <div className="site-header"><Link className="brand" href="/">better<span>csp</span><span className="brand-dot" aria-hidden="true">.</span></Link><span>Rutgers, with a clearer plan.</span><nav className="site-nav" aria-label="Main navigation"><Link href="/">Courses</Link><Link href="/planner">Planner</Link></nav></div>
+        <div className="site-header"><Link className="brand" href="/">better<span>csp</span><span className="brand-dot" aria-hidden="true">.</span></Link><nav className="site-nav" aria-label="Main navigation"><Link href="/">Courses</Link><Link href="/planner">Planner</Link></nav></div>
         <div id="content">{children}</div>
-        <footer className="site-footer"><span>Independent of Rutgers University.</span><span>Plan thoughtfully. Verify with WebReg.</span></footer>
+        <footer className="site-footer"><span>Independent of Rutgers University.</span><span>Verify registration details with WebReg.</span></footer>
       </body>
     </html>
   );

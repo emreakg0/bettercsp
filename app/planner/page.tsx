@@ -16,11 +16,10 @@ export default async function PlannerPage({ searchParams }: {
   const result = searchCourses(catalog.courses, { query, subject, page: typeof params.page === 'string' ? Number(params.page) : 1 });
   const pageHref = (page: number): string => `/planner?${new URLSearchParams({ q: query, subject, page: String(page) })}`;
   return <main className="shell planner-shell">
-    <header className="intro"><p className="eyebrow">A LITTLE SPACE TO PLAN AHEAD</p><h1>Build your semester.</h1>
-      <p>Choose real sections. See how your week fits together.</p></header>
+    <header className="intro"><h1>Build your semester.</h1></header>
     <div className="catalog-context"><span>{catalogSource.label}</span><Link className="back-link" href="/">Browse Course Explorer ↗</Link></div>
     <aside className="snapshot-note"><strong>Planning from a snapshot · capture time unknown</strong>
-      <p>Availability may have changed. Closed sections can be kept as planning options. Adding a section does not reserve a seat or confirm eligibility. Review honors, permission, prerequisites, and restriction notes; verify with Rutgers SOC and WebReg before registration.</p></aside>
+      <p>Seat labels reflect a snapshot, not current availability. Timetable conflicts concern meeting overlaps; eligibility restrictions concern who may enroll. Review registration readiness and verify seats in Rutgers SOC and WebReg. Adding or applying a section does not register you or reserve a seat.</p></aside>
     <PlannerWorkspace sourceId={catalogSource.id} courses={result.courses.map(plannerCourse)}>
       <div id="planner-search"><SearchControls pathname="/planner" query={query} subject={subject} subjects={catalog.subjects} /></div>
       <div className="results-heading"><h2>Find your courses</h2><p role="status">{result.total.toLocaleString('en-US')} {result.total === 1 ? 'course' : 'courses'}</p></div>

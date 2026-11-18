@@ -8,7 +8,10 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selectio
   const start = Math.min(8 * 60, ...events.map(e => Math.floor(e.meeting.startMinute / 60) * 60));
   const end = Math.max(20 * 60, ...events.map(e => Math.ceil(e.meeting.endMinute / 60) * 60));
   const hours = Array.from({ length: (end - start) / 60 + 1 }, (_, i) => start + i * 60);
-  return <div className="calendar-scroll" tabIndex={0} role="region" aria-label="Weekly calendar, scroll horizontally for all seven days">
+  return <>{!events.length && <p className="schedule-status">{selections.length
+    ? 'No timed meetings to display. Review section details for asynchronous coursework, arranged meetings, or times that need verification.'
+    : 'Your calendar is empty. Add a section from course search or apply a generated schedule to see your week.'}</p>}
+    <div className="calendar-scroll" tabIndex={0} role="region" aria-label="Weekly calendar, scroll horizontally for all seven days">
     <div className="week-calendar">
       <div className="calendar-label">ET</div>{weekDays.map(day => <div className="calendar-label" key={day}>{formatDay(day)}</div>)}
       <div className="hour-axis" style={{ height: end - start }}>{hours.map(hour =>
@@ -44,5 +47,5 @@ export function WeeklyCalendar({ selections, idPrefix = 'selected' }: { selectio
         </div>;
       })}
     </div>
-  </div>;
+  </div></>;
 }

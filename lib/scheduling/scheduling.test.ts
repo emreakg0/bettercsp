@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { minute, normalizeCatalog } from '../rutgers/normalize.ts';
 import type { Meeting } from '../catalog/types.ts';
 import { findConflicts, isScheduled, meetingsOverlap, formatDay, formatTime, needsTimingVerification } from './meetings.ts';
-import { plannerCourse, readSavedIds, selectSection, storageKey } from './selection.ts';
+import { plannerCourse, selectedCreditsLabel, readSavedIds, selectSection, storageKey } from './selection.ts';
 
 const source = { id: '2027-1-NB', label: 'Spring 2027', file: '', capturedAt: null };
 const courses = normalizeCatalog(JSON.parse(readFileSync('data/rutgers/spring-2027.json', 'utf8')), source);
@@ -111,4 +111,19 @@ test('arranged and unknown timings still require verification; honors metadata s
   const honors = calculus.sections.find(s => s.index === '15919')!;
   assert.equal(honors.honors?.kind, 'designated');
   assert.equal(honors.delivery.code, 'T');
+});
+
+test('selected credit totals use real catalog values and leave arranged credits unresolved', () => {
+  const cs = plannerCourse(courses.find(c => c.code === '01:198:112')!);
+  const arranged = plannerCourse(courses.find(c => c.credits === null)!);
+  assert.equal(calculus.credits, 4);
+  assert.equal(cs.credits, 4);
+  assert.equal(selectedCreditsLabel([calculus, cs]), '8 credits');
+  assert.equal(selectedCreditsLabel([calculus, calculus]), '4 credits');
+  assert.equal(selectedCreditsLabel([calculus, arranged]), '4 credits known; 1 course has variable or unspecified credits');
+  assert.equal(selectedCreditsLabel([arranged]), 'Total credits unknown; 1 course has variable or unspecified credits');
+  assert.equal(selectedCreditsLabel([]), '0 credits');
+  assert.equal(selectedCreditsLabel([{ id: 'zero', credits: 0 }]), '0 credits');
+  assert.equal(selectedCreditsLabel([{ id: 'one', credits: 1 }]), '1 credit');
+  assert.equal(selectedCreditsLabel([{ id: 'half', credits: 1.5 }, { id: 'other', credits: 2 }]), '3.5 credits');
 });

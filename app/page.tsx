@@ -17,7 +17,7 @@ export default async function Home({ searchParams }: {
   }
   const back = pageHref(result.page);
   return <main className="shell">
-    <header className="intro"><p className="eyebrow">YOUR NEXT SEMESTER, A LITTLE CLEARER</p>
+    <header className="intro">
       <h1>Find your next course.</h1><p>Explore Rutgers courses and the details that matter before registration.</p>
     </header>
     <div className="catalog-context"><span>{catalogSource.label}</span><span>{catalog.courses.length.toLocaleString('en-US')} courses · {catalog.sectionCount.toLocaleString('en-US')} sections</span></div>

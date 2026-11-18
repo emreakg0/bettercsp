@@ -2,15 +2,25 @@ import type { Course, Section } from '../catalog/types.ts';
 import { findConflicts } from './meetings.ts';
 
 // Client projections reuse catalog types while keeping raw Rutgers records on the server.
-export type PlannerCourse = Pick<Course, 'id' | 'code' | 'title' | 'creditsLabel' | 'prerequisites' | 'notes'> & {
+export type PlannerCourse = Pick<Course, 'id' | 'code' | 'title' | 'credits' | 'creditsLabel' | 'prerequisites' | 'notes'> & {
   sections: Omit<Section, 'raw'>[];
 };
 export interface Selection { course: Omit<PlannerCourse, 'sections'>; section: Omit<Section, 'raw'> }
 export function plannerCourse(course: Course): PlannerCourse {
-  return { id: course.id, code: course.code, title: course.title, creditsLabel: course.creditsLabel,
+  return { id: course.id, code: course.code, title: course.title, credits: course.credits, creditsLabel: course.creditsLabel,
     prerequisites: course.prerequisites, notes: course.notes,
     sections: course.sections.map(({ id, index, number, instructors, meetings, campuses, availability, notices, delivery, honors }) =>
       ({ id, index, number, instructors, meetings, campuses, availability, notices, delivery, honors })) };
+}
+// No existing credit-total formatter exists; use numeric catalog values without guessing arranged credits.
+export function selectedCreditsLabel(courses: Pick<Course, 'id' | 'credits'>[]): string {
+  const unique = [...new Map(courses.map(course => [course.id, course])).values()];
+  const unknown = unique.filter(course => course.credits === null).length;
+  const total = unique.reduce((sum, course) => sum + (course.credits ?? 0), 0);
+  const fixed = `${total.toLocaleString('en-US')} ${total === 1 ? 'credit' : 'credits'}`;
+  if (!unknown) return fixed;
+  const unresolved = `${unknown} ${unknown === 1 ? 'course has' : 'courses have'} variable or unspecified credits`;
+  return total ? `${fixed} known; ${unresolved}` : `Total credits unknown; ${unresolved}`;
 }
 export function selectSection(current: Selection[], course: PlannerCourse, section: Selection['section']): Selection[] {
   const { sections: _sections, ...info } = course;
