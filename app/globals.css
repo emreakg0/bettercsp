@@ -218,3 +218,9 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; 
 .generation-results article { margin: 12px 0; }
 .result-preferences > summary { padding: 10px 0; font-size: 13px; }
 .generation-navigation .schedule-nav-button:hover:not(:disabled) { background: var(--accent); color: white; }
+
+.rescue-panel > summary { color: var(--accent); }
+.rescue-field { display: grid; gap: 6px; max-width: 520px; margin: 12px 0; font-weight: 600; }
+.rescue-field select { width: 100%; min-width: 0; font-weight: 400; }
+.rescue-panel > .button { margin-block: 12px; }
+.rescue-panel .schedule-status > p { margin: 4px 0 10px; }

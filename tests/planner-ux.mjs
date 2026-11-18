@@ -41,6 +41,15 @@ try {
     await page.goto(`${origin}/planner`);
     assert.equal(await page.locator('#rescue-panel input').first().isVisible(), false);
     assert.equal(await page.locator('.academic-profile input').first().isVisible(), false);
+    const rescueEntry = page.locator('#rescue-entry');
+    await page.locator('.planner-course button:not(:disabled)').first().waitFor();
+    await rescueEntry.press('Enter');
+    await page.getByLabel('What went wrong with registration?').selectOption('closed');
+    await page.getByText('Rescue needs a plan', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Find minimum-change repairs' }).count(), 0);
+    await page.getByRole('button', { name: 'Find the affected course' }).click();
+    await page.waitForFunction(() => document.activeElement?.id === 'course-search');
+
     for (const [query, code] of [['Data Structures', '01:198:112'], ['Multivariable Calculus', '01:640:251'], ['Discrete Structures', '01:198:205'], ['College Writing', '01:355:101']]) {
       const course = await search(page, query, code);
       await course.getByRole('button', { name: 'Add course', exact: true }).click();
@@ -175,30 +184,54 @@ try {
   await page.getByText('Edit schedule preferences', { exact: true }).click();
   await page.getByLabel('Prefer days off', { exact: true }).uncheck();
   assert.equal(await page.getByRole('button', { name: 'Apply this schedule', exact: true }).isDisabled(), true);
-  const registered = cs.sections.find(s => s.availability === 'open');
-  await seed(page, [calculus.sections[0], registered], { [calculus.sections[0].id]: 'failed', [registered.id]: 'registered' }, [registered.id]);
-  assert.equal(await page.locator('.generator-choices > li').count(), 2);
-  assert.equal(await page.locator(`#selected-${registered.index}`).getByRole('button', { name: `Remove section ${registered.number}` }).isDisabled(), true);
-  await page.getByRole('button', { name: `Find a repair for ${calculus.code}`, exact: true }).click();
+  const protectedThree = ['14315', '14411', '14758'].map(index => catalog.flatMap(c => c.sections).find(s => s.index === index));
+  const failed = calculus.sections[0];
+  const statuses = { [failed.id]: 'failed', ...Object.fromEntries(protectedThree.map(section => [section.id, 'registered'])) };
+  await seed(page, [failed, ...protectedThree], statuses, [protectedThree[0].id]);
+  assert.equal(await page.locator('.generator-choices > li').count(), 4);
+  for (const section of protectedThree) {
+    assert.equal(await page.locator('#selected-' + section.index).getByRole('button', { name: 'Remove section ' + section.number }).isDisabled(), true);
+  }
+  await page.getByRole('button', { name: 'Get registration help for ' + calculus.code, exact: true }).click();
   const rescue = page.locator('#rescue-panel');
-  assert.equal(await rescue.getAttribute('open'), '');
-  await rescue.getByLabel('Try a server-side SOC check', { exact: false }).uncheck();
-  await rescue.getByRole('button', { name: 'Find minimum-change repairs', exact: true }).click();
+  await rescue.getByText('BetterCSP cannot establish the cause', { exact: false }).waitFor();
+  assert.equal(await rescue.getByRole('button', { name: 'Find minimum-change repairs' }).count(), 0);
+  await rescue.getByLabel('What went wrong with registration?').selectOption('closed');
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), failed.id);
+  const searchRescue = rescue.getByRole('button', { name: 'Find minimum-change repairs', exact: true });
+  const savedBefore = await page.evaluate(key => localStorage.getItem(key), key);
+  await page.route('**/api/planner/rescue', route => route.fulfill({ status: 503, json: { error: 'Rescue is temporarily unavailable.' } }));
+  await searchRescue.click();
+  await rescue.getByRole('alert').filter({ hasText: 'Rescue is temporarily unavailable.' }).waitFor();
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), key), savedBefore);
+  await page.unroute('**/api/planner/rescue');
+  await searchRescue.click();
   await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
+  await rescue.getByText('1 section changes · 3 unchanged.', { exact: true }).waitFor();
+  await page.setViewportSize({ width: 375, height: 812 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await rescue.locator('.week-calendar').waitFor();
+  await rescue.getByRole('region', { name: 'Weekly calendar', exact: false }).focus();
+  assert.equal(await rescue.getByRole('button', { name: 'Apply approved repair' }).isDisabled(), true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  for (const section of protectedThree) {
+    const row = rescue.getByRole('row').filter({ hasText: section.index });
+    assert.match(await row.first().innerText(), /Preserved/);
+  }
   await rescue.locator('.calendar-event[data-campus]').first().waitFor();
   await rescue.getByRole('list', { name: 'Calendar campus and availability legend' }).waitFor();
   const applyRepair = rescue.getByRole('button', { name: 'Apply approved repair', exact: true });
   assert.equal(await applyRepair.isDisabled(), true);
-  await page.locator(`#selected-${calculus.sections[0].index} .registration-report select`).selectOption('needs-verification');
-  assert.equal(await applyRepair.isDisabled(), true);
-  await page.locator(`#selected-${calculus.sections[0].index} .registration-report select`).selectOption('failed');
-  await rescue.getByRole('button', { name: 'Find minimum-change repairs', exact: true }).click();
-  await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
   await rescue.getByLabel('I approve the complete before/after', { exact: false }).check();
+  await page.locator('#selected-' + failed.index + ' .registration-report select').selectOption('needs-verification');
+  assert.equal(await applyRepair.isDisabled(), true);
+  await page.locator('#selected-' + failed.index + ' .registration-report select').selectOption('failed');
   await applyRepair.click();
+  const applied = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
+  assert.ok(!applied.sectionIds.includes(failed.id));
+  assert.ok(protectedThree.every(section => applied.sectionIds.includes(section.id) && applied.registrationStatuses[section.id] === 'registered'));
   await page.getByRole('button', { name: 'Undo applied repair', exact: true }).click();
-  assert.equal(await page.locator(`#selected-${calculus.sections[0].index} .registration-report select`).inputValue(), 'failed');
-  assert.equal(await page.locator(`#selected-${registered.index} .registration-report select`).inputValue(), 'registered');
+  assert.equal(await page.locator('#selected-' + failed.index + ' .registration-report select').inputValue(), 'failed');
   // Registration settings remain optional and accessible; changing them invalidates previews.
   await page.locator('.registration-settings > summary').click();
   await page.locator('.academic-profile > summary').click();
@@ -206,7 +239,7 @@ try {
   await page.route('**/api/planner/generate', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Try again shortly.' }) }));
   await page.getByRole('button', { name: 'Generate schedules', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: 'Try again shortly.' }).waitFor();
-  assert.equal(await page.locator('.selected-section').count(), 2);
+  assert.equal(await page.locator('.selected-section').count(), 4);
   await page.unroute('**/api/planner/generate');
   const honors = calculus.sections.find(s => s.index === '15919');
   await seed(page, [honors]);
@@ -217,7 +250,41 @@ try {
   assert.equal(await routine.locator(':scope > summary').filter({ hasText: 'Needs verification' }).count(), 1);
   assert.equal(await routine.filter({ has: page.getByText(/^Confirm prerequisites, placement/) }).locator(':scope > p').first().isVisible(), false);
   await page.getByRole('button', { name: `Review recovery options for ${calculus.code}`, exact: true }).click();
-  assert.equal(await page.locator('#rescue-panel').getAttribute('open'), '');
+  const reason = rescue.getByLabel('What went wrong with registration?');
+  await reason.selectOption('permission');
+  assert.equal(await rescue.getByLabel('Which section is affected?').inputValue(), honors.id);
+  assert.match(await rescue.getByRole('link', { name: 'Rutgers permission instructions' }).getAttribute('href'), /math.sas.rutgers.edu/);
+  assert.equal(await rescue.getByRole('button', { name: 'Look for another section instead' }).isVisible(), true);
+  assert.equal(await rescue.getByRole('heading', { name: 'Proposed repairs' }).count(), 0);
+  await rescue.getByRole('button', { name: 'Look for another section instead' }).click();
+  await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
+  await reason.selectOption('prerequisite');
+  await rescue.getByText('cannot verify the academic record', { exact: false }).waitFor();
+  await rescue.getByText('Another section may have the same requirement.', { exact: false }).waitFor();
+  assert.equal(await searchRescue.count(), 0);
+
+  const conflictMath = calculus.sections.find(s => s.index === '15897');
+  const conflictCs = cs.sections.find(s => s.index === '14332');
+  await seed(page, [conflictMath, conflictCs], { [conflictMath.id]: 'registered', [conflictCs.id]: 'registered' });
+  await page.locator('#manual-schedule').getByRole('button', { name: 'Registration Rescue — Something went wrong?', exact: true }).click();
+  await reason.selectOption('conflict');
+  await rescue.getByLabel('Which section is affected?').selectOption(conflictMath.id);
+  await rescue.locator('.schedule-status').getByText(/overlaps.*Eastern/).first().waitFor();
+  await searchRescue.click();
+  await rescue.getByRole('heading', { name: 'No repair found under these protections' }).waitFor();
+  await rescue.getByText('Explicitly authorize exploring protected changes', { exact: true }).click();
+  await rescue.getByLabel('I authorize exploring changes to ' + calculus.code, { exact: false }).check();
+  await searchRescue.click();
+  await rescue.getByRole('heading', { name: 'Proposed repairs', exact: true }).waitFor();
+  await rescue.getByText('1 section changes · 1 unchanged.', { exact: true }).waitFor();
+  await rescue.getByLabel('I approve the complete before/after', { exact: false }).check();
+  assert.equal(await applyRepair.isDisabled(), true);
+  await rescue.getByLabel('I explicitly approve changing protected indexes', { exact: false }).check();
+  assert.equal(await applyRepair.isEnabled(), true);
+  await applyRepair.click();
+  await page.getByText('Earlier registered self-reports need WebReg verification', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Undo applied repair', exact: true }).click();
+  assert.equal(await page.locator('#selected-' + conflictMath.index + ' .registration-report select').inputValue(), 'registered');
   const sites = ['ONL', 'BUS', 'CAC', 'DOUGLAS/COOK', 'LIV', 'DNB', 'Rutgers–Camden', 'Rutgers–Newark', 'Unverified site'];
   const colors = ['online', 'busch', 'college-avenue', 'cook-douglass', 'livingston', 'downtown', 'camden', 'newark', 'other'];
   const meeting = calculus.sections[0].meetings[0];
@@ -243,5 +310,5 @@ try {
   assert.match(await blocks.last().innerText(), /Unverified site[\s\S]*Closed in snapshot/);
   await blocks.first().focus();
   assert.equal(await blocks.first().evaluate(el => getComputedStyle(el).outlineStyle), 'solid');
-  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, contextual Rescue consent/undo, optional registration settings.');
+  console.log('PASS: desktop/mobile four-course workflow, defaults, previews/comparison, apply/undo, manual-section preservation, saved drafts, stale results, registered locks, guided Rescue (empty, rejected, closed, permission, prerequisite, conflict), consent/undo, optional registration settings.');
 } finally { await browser.close(); }

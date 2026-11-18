@@ -34,7 +34,10 @@ export function rescueSchedule(catalog: Course[], request: RescueRequest, availa
   if (!selections.length || selections.length !== request.sectionIds.length || selections.length > 12 || new Set(selections.map(s => s.course.id)).size !== selections.length) {
     result.issues.push('Rescue needs 1–12 known sections, one per course. Resolve missing sections or duplicate course selections first.'); return result;
   }
-  if (!problems.length) { result.issues.push('No confirmed problem was found. Mark a failure or request replacement of a specific section; your draft is unchanged.'); return result; }
+  if (!problems.some(problem => problem.requiresReplacement || problem.source === 'timetable')) {
+    result.issues.push('There is no timetable repair to make from this information alone. Verify the issue with Rutgers, or explicitly request a different section.');
+    return result;
+  }
   const replacing = new Set(problems.filter(p => p.requiresReplacement).map(p => p.sectionId));
   const blocked = protectedIds.filter(id => replacing.has(id));
   if (blocked.length) {

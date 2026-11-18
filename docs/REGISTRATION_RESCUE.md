@@ -17,9 +17,10 @@ confirmation. Changing a report never enrolls or drops a class.
 
 Rescue distinguishes student reports, snapshot/current-availability evidence, academic findings,
 and timetable problems. Snapshot closure is a possible problem, not a confirmed present-day closure:
-it cannot force unrelated planned changes. An explicit replacement request or failed/permission
-report can establish which index the student wants replaced. A registered section being closed
-in a snapshot is not evidence that its existing registration failed.
+it cannot force unrelated planned changes. Student reports and permission findings are diagnostic.
+Only an explicit request to replace the index, a supported eligibility incompatibility, or verified
+current closure can make a replacement mandatory in a repair. A snapshot closure is not evidence
+that a registered student’s existing enrollment failed.
 
 ## Deterministic algorithm
 
@@ -61,9 +62,8 @@ best found repair, with no global-optimality or impossibility claim. Original co
 retained in this phase; when section-level repair is impossible, explain the constraints and offer
 manual department/constraint review rather than inventing substitute courses.
 
-A zero-change preview can result when only unconfirmed snapshot or verification conditions exist.
-It is not an applied repair or successful registration resolution: Apply stays disabled, and the
-student is asked to verify the condition or explicitly request an index replacement.
+A diagnosis without an actionable timetable problem or a replacement requirement does not start
+the solver. New replacement candidates that require permission continue to be excluded. Confirmed eligibility filtering remains in effect.
 
 ## Availability investigation and guarantees
 
@@ -93,12 +93,18 @@ registration and cannot establish eligibility or reserve a seat.
 
 ## Interface, approval, and undo
 
-The collapsible Rescue panel and manual schedule action show protected courses, source-specific
-problems, replacement targets, and cached availability evidence. The existing generator's shared
-hard constraints and preference controls also apply to Rescue. Academic facts remain session-only.
+Registration Rescue appears above the planner workspace and can be opened from the saved schedule.
+Guided intake asks what went wrong and which section is affected. Empty plans link to course search.
+Closure and requested swaps offer replacement search. Known meeting overlaps show both meeting
+times and offer a repair without selecting either section for mandatory replacement. Permission
+guidance offers an explicit alternative search. Prerequisite or placement concerns and unexplained
+WebReg rejections lead to verification with Rutgers. No search runs when the student selects an
+intake answer. The existing hard constraints and preferences also apply to Rescue. Academic facts
+remain session-only. Optional server availability checks are off by default.
 
-Alternatives have complete before/after tables, an alternative comparison, shared readiness/source
-links, a calendar preview, and introduced-restriction explanations. Unknown eligibility is labeled
+Alternatives lead with their goal, changed sections, preserved count, and remaining verification,
+followed by before/after tables and a calendar preview. Disclosures retain comparison, readiness,
+source, and diagnostic details. New restrictions and remaining blockers are visible in the proposal. Unknown eligibility is labeled
 provisional/verification-needed, never a successful resolution. Permission instructions are available
 through the reused current/proposed section readiness views. Timetable, academic eligibility, seats,
 and registration confirmation remain four separate questions.

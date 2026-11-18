@@ -11,6 +11,7 @@ import { AcademicProfile } from './academic-profile';
 import { RegistrationReadiness } from './registration-readiness';
 import { emptyProfile, type StudentProfile } from '@/lib/eligibility/types';
 import { RescuePanel } from './rescue-panel';
+import type { RescueReason } from './rescue-intake';
 import { initialSettings, type GenerationSettings } from './generation-controls';
 import { applyRepair, draftSignature, protectedSections, readSavedRegistration, registrationAfterChange, undoRepair } from '@/lib/recovery/state';
 import { registrationLabels, type RegistrationStatuses, type Repair, type RescueDraft } from '@/lib/recovery/types';
@@ -27,6 +28,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const [applyError, setApplyError] = useState('');
   const [statuses, setStatuses] = useState<RegistrationStatuses>({});
   const [settings, setSettings] = useState<GenerationSettings>(initialSettings);
+  const [rescueEntry, setRescueEntry] = useState<{ key: number; sectionId?: string; reason?: RescueReason }>({ key: 0 });
   const [backup, setBackup] = useState<{ before: RescueDraft; afterSignature: string; label: string } | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
@@ -87,7 +89,29 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
   const effectiveLocks = protectedSections(draft);
   const priorRegistered = Object.entries(statuses).filter(([id, status]) => status === 'registered' && !selections.some(s => s.section.id === id));
   const canGenerate = ready && !missing.length && !priorRegistered.length;
-  function openRescue(): void { const panel = document.getElementById('rescue-panel') as HTMLDetailsElement | null; if (panel) { panel.open = true; panel.scrollIntoView({ block: 'start' }); } }
+  function openRescue(sectionId?: string, reason?: RescueReason): void {
+    if (sectionId) setRescueEntry(current => ({ key: current.key + 1, sectionId, reason }));
+    requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
+      if (!panel) return;
+      panel.open = true;
+      panel.querySelector<HTMLElement>('summary')?.focus();
+      panel.scrollIntoView({ block: 'start' });
+    });
+  }
+  function findRescueCourse(): void {
+    const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
+    if (panel) panel.open = false;
+    setView('courses');
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#planner-search input[type=search]')?.focus());
+  }
+  function reviewRescueSchedule(): void {
+    const panel = document.querySelector<HTMLDetailsElement>('#rescue-panel');
+    if (panel) panel.open = false;
+    setView('calendar');
+    setScheduleView('saved');
+    requestAnimationFrame(() => document.querySelector<HTMLSelectElement>('#manual-schedule .registration-report select')?.focus());
+  }
   // Candidate-only additions reuse course identities; manual choices additionally keep their exact section.
   function addCourse(course: PlannerCourse, keepSection = false): void {
     setChoices(current => current.some(c => c.courseId === course.id)
@@ -125,6 +149,9 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
     } catch (err) { setApplyError(err instanceof Error ? err.message : 'Repair could not be applied. Search again.'); return false; }
   }
   return <>
+    <RescuePanel key={rescueEntry.key} sourceId={sourceId} draft={draft} profile={profile} settings={settings} ready={canGenerate}
+      initialSectionId={rescueEntry.sectionId} initialReason={rescueEntry.reason} onFindCourse={findRescueCourse}
+      onReviewSchedule={reviewRescueSchedule} onApply={acceptRepair} />
     {showGuide && <aside className="schedule-status" aria-label="Planner quick start">
       <strong>Start with a few courses.</strong>
       <p>Find courses and choose “Add course”. Set preferences if you want, then generate schedules. Compare the calendars and apply your preferred result. Use “Choose a specific section” for manual planning.</p>
@@ -167,7 +194,7 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       <section id="manual-schedule" className="saved-schedule" aria-label="Your weekly schedule">
         <div className="results-heading"><h2>Your week <span className="count">{selections.length}</span></h2><p role="status">{saveStatus}</p></div>
         <p className="muted" aria-live="polite">{selections.length} selected {selections.length === 1 ? 'course' : 'courses'} · {selectedCreditsLabel(selections.map(s => s.course))}{missing.length ? ' · Totals exclude unresolved saved sections below.' : ''}</p>
-        <button className="text-button" onClick={openRescue}>Rescue schedule</button>
+        <button className="text-button" onClick={() => openRescue()}>Registration Rescue — Something went wrong?</button>
         {backup && <button className="text-button" disabled={draftSignature(draft) !== backup.afterSignature} onClick={() => { const before = undoRepair(draft, backup.before, backup.afterSignature); setSelections(before.selections); setLocks(before.locks); setStatuses(before.statuses); setBackup(null); }}>{backup.label}</button>}
         {!!priorRegistered.length && <aside className="snapshot-note"><strong>Earlier registered self-reports need WebReg verification</strong><p>These indexes are outside this planner draft. A planner repair did not drop them from Rutgers enrollment. Automatic planning waits until you verify and update these reports.</p>{priorRegistered.map(([id]) => <div key={id}><span>Index {id.split(':').at(-1)} · registered self-report </span><button className="text-button" onClick={() => setStatuses(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)))}>I verified this prior enrollment; clear report</button></div>)}</aside>}
         <p className="muted">All times Eastern · all seven days. Select a calendar block for its section details.</p>
@@ -185,13 +212,13 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
           {!!unresolved.length && <p>Timing needs verification: {unresolved.map(s => `${s.course.code} (${s.section.number})`).join(', ')}. These meetings cannot be checked or placed on the calendar. Confirm with Rutgers.</p>}
         </div>
         <WeeklyCalendar selections={selections} />
-        <RegistrationReadiness selections={selections} profile={profile} onRescue={openRescue} />
+        <RegistrationReadiness selections={selections} profile={profile} onRescue={sectionId => openRescue(sectionId)} />
         <div className="results-heading"><h2>Selected sections</h2></div>
         {!selections.length && <p className="muted">Add a section from course search, or apply a generated schedule. Your selected sections and registration reports will appear here.</p>}
         {selections.map(({ course, section }) => <article className="selected-section" key={section.id} id={`selected-${section.index}`}>
           <h3>{course.code} · {course.title}</h3><p className="muted">{course.creditsLabel}</p>
           <label className="registration-report">Registration report · index {section.index}<select value={statuses[section.id] ?? 'planned'} onChange={e => setStatuses(current => ({ ...current, [section.id]: e.target.value as RegistrationStatuses[string] }))}>{Object.entries(registrationLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          {statuses[section.id] && statuses[section.id] !== 'planned' && statuses[section.id] !== 'registered' && <button className="text-button" onClick={openRescue}>Find a repair for {course.code}</button>}
+          {statuses[section.id] && statuses[section.id] !== 'planned' && statuses[section.id] !== 'registered' && <button className="text-button" onClick={() => openRescue(section.id, statuses[section.id] === 'needs-permission' ? 'permission' : statuses[section.id] === 'failed' ? 'rejected' : undefined)}>Get registration help for {course.code}</button>}
           <p className="muted">Self-reported only. Updating this report does not enroll or drop a section in WebReg.</p>
           <SectionList sections={[section]} />
           {course.prerequisites && <p className="muted">Prerequisites: {course.prerequisites}</p>}
@@ -206,7 +233,6 @@ export function PlannerWorkspace({ sourceId, courses, children }: {
       }
     />
     <div className="planner-secondary">
-      <RescuePanel sourceId={sourceId} draft={draft} profile={profile} settings={settings} ready={canGenerate} onApply={acceptRepair} />
       <details className="registration-settings"><summary>Registration settings · optional academic information</summary><AcademicProfile profile={profile} onChange={setProfile} /></details>
     </div>
   </>;

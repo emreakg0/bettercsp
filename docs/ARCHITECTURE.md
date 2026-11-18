@@ -350,8 +350,9 @@ reports, minimum-change staged search, protected apply, and signature-checked un
 `generateSchedules` and `evaluateEligibility`; the generator's optional internal baseline/change
 budget keeps Phase 3's default objective unchanged. Registered self-reports and manual locks are
 hard constraints unless per-index exploration and apply-time overrides are explicitly approved.
-Original courses stay required; proposals first replace the problematic indexes, then expand the
-number of changed planned sections only as necessary. Weighted preferences break disruption ties.
+Original courses stay required. Guided intake separates registration reports from requests to
+replace an index. The solver first tries the fewest changed sections for an actionable timetable
+problem or requested replacement, then expands only as necessary. Weighted preferences break disruption ties.
 Search steps are bounded across stages, and truncated proposals are explicitly best-found only.
 
 `POST /api/planner/rescue` resolves scoped saved IDs and validates the same shared generation/profile

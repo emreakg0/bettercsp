@@ -23,7 +23,7 @@ export function ReadinessFindings({ findings }: { findings: EligibilityFinding[]
     </li>;
   })}</ul>;
 }
-export function RegistrationReadiness({ selections, profile, onRescue }: { selections: Selection[]; profile: StudentProfile; onRescue?: () => void }) {
+export function RegistrationReadiness({ selections, profile, onRescue }: { selections: Selection[]; profile: StudentProfile; onRescue?: (sectionId: string) => void }) {
   if (!selections.length) return null;
   const assessments = selections.map(selection => ({
     ...selection, result: evaluateEligibility(selection.course, selection.section, profile),
@@ -38,7 +38,7 @@ export function RegistrationReadiness({ selections, profile, onRescue }: { selec
     {blockers.map(({ course, section, result }) => <details className={`readiness-section readiness-${result.status}`} key={section.id} open>
       <summary><strong>{course.code} · section {section.number}</strong><span>{result.confirmedIncompatible ? 'Reported information conflicts with requirement' : statusLabels[result.status]}</span></summary>
       <ReadinessFindings findings={result.findings.filter(isBlocker)} />
-      {onRescue && <button className="text-button" onClick={onRescue}>Review recovery options for {course.code}</button>}
+      {onRescue && <button className="text-button" onClick={() => onRescue(section.id)}>Review recovery options for {course.code}</button>}
     </details>)}
     {!!review.length && <details className="readiness-section"><summary><strong>Needs verification · {review.length} {review.length === 1 ? 'section' : 'sections'}</strong></summary>
       <p className="muted">Confirm prerequisites, placement, or other conditions with Rutgers where listed below.</p>

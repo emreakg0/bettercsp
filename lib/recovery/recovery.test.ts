@@ -38,11 +38,13 @@ test('one snapshot-closed real Calculus section is replaced while registered Dat
   assert.ok(result.repairs.every(p => p.changedIds.length === 1));
   assert.ok(result.repairs.every(p => p.schedule.selections.some(s => s.section.id === chosenCs.id)));
 });
-test('multiple student-reported failures are repaired together without disturbing other courses', () => {
+test('multiple explicitly requested replacements preserve unrelated courses', () => {
   const a = course('A', [section('10001'), section('10002', [meeting('T')])]);
   const b = course('B', [section('10003', [meeting('W')]), section('10004', [meeting('H')])]);
   const c = course('C', [section('10005', [meeting('F')])]); const r = request([a.sections[0].id, b.sections[0].id, c.sections[0].id]);
   r.statuses[a.sections[0].id] = 'failed'; r.statuses[b.sections[0].id] = 'failed';
+  assert.equal(rescueSchedule([a, b, c], r, snapshot).visited, 0);
+  r.replaceSectionIds = [a.sections[0].id, b.sections[0].id];
   const result = rescueSchedule([a, b, c], r, snapshot);
   assert.equal(result.repairs[0].changedIds.length, 2); assert.equal(result.changeBudget, 2);
   assert.ok(result.repairs[0].schedule.selections.some(s => s.section.id === c.sections[0].id));
@@ -51,7 +53,7 @@ test('multiple student-reported failures are repaired together without disturbin
 test('minimum changes dominate preferences and minimal-stage alternatives never include extra disruption', () => {
   const a = course('A', [section('10001'), section('10002', [meeting('M', 600, 660)])]);
   const b = course('B', [section('10003', [meeting('T')]), section('10004', [meeting('W', 900, 960)])]);
-  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.settings.weights.laterStarts = 10;
+  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id]; r.settings.weights.laterStarts = 10;
   const result = rescueSchedule([a, b], r, snapshot);
   assert.equal(result.changeBudget, 1); assert.ok(result.repairs.every(p => p.changedIds.length === 1));
   assert.ok(result.repairs.every(p => p.schedule.selections.some(s => s.section.id === b.sections[0].id)));
@@ -59,7 +61,7 @@ test('minimum changes dominate preferences and minimal-stage alternatives never 
 test('one additional planned section is rearranged only when replacing the problem alone cannot work', () => {
   const a = course('A', [section('10001', [meeting('M')]), section('10002', [meeting('T')])]);
   const b = course('B', [section('10003', [meeting('T')]), section('10004', [meeting('W')])]);
-  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed';
+  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id];
   const result = rescueSchedule([a, b], r, snapshot);
   assert.equal(result.changeBudget, 2); assert.equal(result.repairs[0].changedIds.length, 2);
 });
@@ -74,10 +76,16 @@ test('registered and locked sections require explicit exploration overrides and 
   assert.equal(after.statuses[a.sections[0].id], 'registered'); // Keep the unresolved prior-enrollment report.
   assert.deepEqual(after.locks, []);
 });
-test('honors permission failure uses real H1 and never labels unknown eligibility as resolved', () => {
+test('H1 permission stays diagnostic until the student requests a replacement', () => {
   const h1 = calculus.sections.find(s => s.index === '15919')!; const r = request([h1.id]); r.statuses[h1.id] = 'needs-permission';
-  const result = rescueSchedule([calculus], r, snapshot); assert.ok(result.repairs.length);
-  assert.ok(result.problems.some(p => p.source === 'eligibility' && /invitation/.test(p.message)));
+  const diagnosis = rescueSchedule([calculus], r, snapshot);
+  assert.equal(diagnosis.visited, 0);
+  assert.equal(diagnosis.repairs.length, 0);
+  assert.ok(diagnosis.problems.some(p => p.source === 'eligibility' && /invitation/.test(p.message)));
+  assert.ok(diagnosis.problems.every(p => !p.requiresReplacement));
+  r.replaceSectionIds = [h1.id];
+  const result = rescueSchedule([calculus], r, snapshot);
+  assert.ok(result.repairs.length);
   assert.ok(result.repairs.every(p => !p.schedule.selections.some(s => s.section.id === h1.id)));
   assert.ok(result.repairs.every(p => p.requiresReview));
   assert.ok(result.repairs.some(p => p.schedule.eligibility.some(e => e.status === 'verification-needed')));
@@ -89,7 +97,7 @@ test('a protected timetable conflict is infeasible until protection changes are 
   assert.ok(result.issues.some(i => /Explicitly authorize/.test(i)));
 });
 test('hard constraints remain hard during rescue, even when a failed section has an alternative', () => {
-  const a = course('A', [section('10001'), section('10002', [meeting('T')])]); const r = request([a.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.settings.constraints.daysOff = ['T'];
+  const a = course('A', [section('10001'), section('10002', [meeting('T')])]); const r = request([a.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id]; r.settings.constraints.daysOff = ['T'];
   assert.equal(rescueSchedule([a], r, snapshot).repairs.length, 0);
 });
 test('registered snapshot-closed sections are not diagnosed as failed enrollment', () => {
@@ -117,7 +125,7 @@ test('availability cache records actual successful retrieval, coalesces calls an
 });
 test('repair apply and undo are atomic, preserve unrelated selections, and reject stale reports or locks', () => {
   const a = course('A', [section('10001'), section('10002', [meeting('T')])]), b = course('B', [section('10003', [meeting('F')])]);
-  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.statuses[b.sections[0].id] = 'registered';
+  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id]; r.statuses[b.sections[0].id] = 'registered';
   const result = rescueSchedule([a, b], r, snapshot), before = draft([a, b], r), repair = result.repairs[0]; assert.ok(repair);
   const after = applyRepair(before, repair, result.basis, []); assert.equal(after.statuses[b.sections[0].id], 'registered');
   assert.deepEqual(undoRepair(after, before, draftSignature(after)), before);
@@ -135,7 +143,7 @@ test('status saves are scoped, legacy-compatible, and validated without overwrit
 test('large products and repeated stages share a deterministic computation budget', () => {
   const a = course('A', [section('10001'), ...Array.from({ length: 30 }, (_, i) => section(String(11000 + i), [meeting('T')]))]);
   const many = [a, ...Array.from({ length: 6 }, (_, i) => course(`C${i}`, Array.from({ length: 25 }, (_, j) => section(String(20000 + i * 100 + j), [{ ...meeting(), timing: 'asynchronous', dayCode: '', startMinute: null, endMinute: null, campus: 'ONLINE' }]))))];
-  const r = request(many.map(c => c.sections[0].id)); r.statuses[a.sections[0].id] = 'failed';
+  const r = request(many.map(c => c.sections[0].id)); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id];
   const result = rescueSchedule(many, r, snapshot, 300);
   assert.ok(result.visited <= 300); assert.ok(result.truncated); assert.deepEqual(result, rescueSchedule(many, r, snapshot, 300));
   if (result.repairs.length) assert.ok(result.repairs.every(p => p.changedIds.length === 1));
@@ -150,9 +158,22 @@ test('verified fresh availability is kept separate from snapshot fallback in rec
 test('one confirmed failure does not force changes to unrelated snapshot-closed planned backups', () => {
   const a = course('A', [section('10001'), section('10002', [meeting('T')])]);
   const b = course('B', [section('10003', [meeting('F')], 'closed'), section('10004', [meeting('W')])]);
-  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed';
+  const r = request([a.sections[0].id, b.sections[0].id]); r.statuses[a.sections[0].id] = 'failed'; r.replaceSectionIds = [a.sections[0].id];
   const result = rescueSchedule([a, b], r, snapshot);
   assert.ok(result.repairs.length); assert.ok(result.repairs.every(p => p.changedIds.length === 1));
   assert.ok(result.repairs.every(p => p.schedule.selections.some(s => s.section.id === b.sections[0].id)));
   assert.ok(result.repairs.every(p => p.requiresReview));
+});
+
+
+test('repairing a conflict does not automatically replace an unrelated permission report', () => {
+  const a = course('A', [section('10001'), section('10004', [meeting('T')])]);
+  const b = course('B', [section('10002')]);
+  const c = course('C', [section('10003', [meeting('W')]), section('10005', [meeting('H')])]);
+  const r = request([a.sections[0].id, b.sections[0].id, c.sections[0].id]);
+  r.statuses[b.sections[0].id] = 'registered';
+  r.statuses[c.sections[0].id] = 'needs-permission';
+  const result = rescueSchedule([a, b, c], r, snapshot);
+  assert.equal(result.changeBudget, 1);
+  assert.deepEqual(result.repairs[0].changedIds, [a.sections[0].id]);
 });
