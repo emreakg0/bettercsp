@@ -47,6 +47,9 @@ try {
     }
     assert.equal(await page.locator('.generator-choices > li').count(), 4);
     assert.equal(await page.getByLabel('Earliest start (Eastern)', { exact: true }).isVisible(), false);
+    for (const label of ['Prefer days off', 'Avoid early mornings', 'Minimize schedule gaps', 'Minimize campus changes', 'Avoid late evenings']) {
+      assert.equal(await page.getByLabel(label, { exact: true }).isChecked(), true);
+    }
     const result = await generate(page);
     assert.ok(result.request.choices.every(c => c.required));
     const savedBefore = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
@@ -63,6 +66,37 @@ try {
     await current.filter({ hasText: 'Schedule 2 of 20' }).waitFor();
     for (let step = 0; step < 9; step++) await page.getByRole('button', { name: 'Next schedule →' }).click();
     assert.equal(await current.textContent(), 'Schedule 11 of 20');
+    if (result.discovery.resumable) {
+      let cursor = result.discovery.nextCursor;
+      const known = new Set(result.schedules.map(s => s.id));
+      const currentCalendar = await page.locator('.generation-results .week-calendar').innerText();
+      // Follow the API chain independently. This also checks retrying a token does not consume it.
+      const second = await page.request.post(`${origin}/api/planner/generate`, { data: { ...result.request, discoveryCursor: cursor } });
+      const secondPage = await second.json();
+      cursor = secondPage.discovery.nextCursor;
+      for (const schedule of secondPage.schedules) { assert.ok(!known.has(schedule.id)); known.add(schedule.id); }
+      for (let loaded = 30; loaded <= 70; loaded += 10) {
+        const response = page.waitForResponse(r => r.url().endsWith('/api/planner/generate') && r.request().method() === 'POST');
+        await page.getByRole('button', { name: 'Explore more schedules' }).click();
+        const answer = await response;
+        assert.equal(answer.status(), 200);
+        assert.equal(answer.request().postDataJSON().discoveryCursor, cursor);
+        const next = await answer.json();
+        cursor = next.discovery.nextCursor;
+        await current.filter({ hasText: `Schedule 11 of ${loaded}` }).waitFor();
+        assert.equal(await page.locator('.generation-results .week-calendar').innerText(), currentCalendar);
+        assert.equal(await page.locator('.schedule-comparison').isVisible(), true);
+        for (const schedule of next.schedules) { assert.ok(!known.has(schedule.id)); known.add(schedule.id); }
+        if (loaded === 70) {
+          assert.ok(next.discovery.windowSteps > 0 && next.discovery.windowSteps <= 25000);
+          assert.ok(next.discovery.uniqueValid > result.discovery.uniqueValid);
+        }
+      }
+      const invalid = await page.request.post(`${origin}/api/planner/generate`, {
+        data: { ...result.request, discoveryCursor: cursor, weights: { ...result.request.weights, lateEvenings: 0 } },
+      });
+      assert.equal(invalid.status(), 409);
+    }
     await page.getByRole('button', { name: 'Apply this schedule', exact: true }).click();
     await page.getByText('4 selected courses · 15 credits', { exact: true }).waitFor();
     assert.equal((await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key)).sectionIds.length, 4);

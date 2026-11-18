@@ -43,7 +43,6 @@ export function ScheduleGenerator({ sourceId, choices, onChoicesChange, selectio
       if (abort.signal.aborted) return;
       const result = body as GenerationResult;
       if (more) {
-        if (!result.schedules.length) throw new Error('The schedule search changed. Generate schedules again.');
         setResponse(current => {
           if (current?.basis !== basis || current.result.discovery?.nextCursor !== cursor) return current;
           const seen = new Set(current.result.schedules.map(schedule => schedule.id));

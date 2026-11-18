@@ -5,12 +5,14 @@ import type { Course } from '../catalog/types.ts';
 import { plannerCourse, type Selection } from './selection.ts';
 import { exclusionReason, sectionsOverlap, type Candidate } from './candidates.ts';
 import { equivalentCourseGroups, linkageNotices } from './relationships.ts';
+import { InvalidDiscoveryCursor } from './discovery-cursor.ts';
+import { discoveryPageSize, discoveryWindowLimit, discoveryWindowSteps, initialShortlistSize, type DiscoveryCheckpoint } from './discovery-state.ts';
 import { scoreSchedule } from './scoring.ts';
 import { parseGenerationRequest } from './generation-request.ts';
 import type { CandidateReport, GenerationRequest, GenerationResult, RankedSchedule } from './generation-types.ts';
 
 type Domain = { course: Course; required: boolean; candidates: Candidate[] };
-type Found = ReturnType<typeof scoreSchedule> & { id: string; picked: Candidate[]; optionalIncluded: number; changed: number };
+type Found = ReturnType<typeof scoreSchedule> & { id: string; picked: Candidate[]; optionalIncluded: number; changed: number; ordinals?: number[] };
 const compare = (a: Found, b: Found): number => a.changed - b.changed || b.optionalIncluded - a.optionalIncluded || a.score - b.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 function prepare(courses: Course[], request: GenerationRequest): { domains: Domain[]; reports: CandidateReport[]; issues: string[] } {
@@ -81,20 +83,20 @@ function describe(found: Found, domains: Domain[], cached: Map<string, Selection
 // Distinguish a changed replay from a catalog or server failure.
 export class StaleDiscoveryError extends Error {}
 
-export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number; baseline?: { courseId: string; sectionId: string }[]; maxChanges?: number; discoveryOffset?: number; discoveryRevision?: string } = {}): GenerationResult {
+export function generateSchedules(courses: Course[], input: GenerationRequest, limits: { maxNodes?: number; maxResults?: number; baseline?: { courseId: string; sectionId: string }[]; maxChanges?: number; discoveryOffset?: number; discoveryRevision?: string; checkpoint?: DiscoveryCheckpoint | null } = {}): GenerationResult & { checkpoint?: DiscoveryCheckpoint } {
   const request = parseGenerationRequest(input);
-  const maxNodes = Number.isFinite(limits.maxNodes) ? Math.max(1, Math.min(50000, Math.floor(limits.maxNodes!))) : 25000;
+  const maxNodes = Number.isFinite(limits.maxNodes) ? Math.max(1, Math.min(limits.checkpoint === undefined ? 50000 : discoveryWindowSteps, Math.floor(limits.maxNodes!))) : 25000;
+  const resumable = limits.checkpoint !== undefined;
   const offset = limits.discoveryOffset;
   const maxResults = offset !== undefined ? 60 : Number.isFinite(limits.maxResults) ? Math.max(1, Math.min(20, Math.floor(limits.maxResults!))) : 10;
   const { domains, reports, issues } = prepare(courses, request);
   const baseline = new Map(limits.baseline?.map(item => [item.courseId, item.sectionId]) ?? []);
   const maxChanges = Number.isFinite(limits.maxChanges) ? Math.max(0, Math.floor(limits.maxChanges!)) : Infinity;
   if (baseline.size) for (const domain of domains) domain.candidates.sort((a, b) => Number(b.section.id === baseline.get(domain.course.id)) - Number(a.section.id === baseline.get(domain.course.id)) || (a.section.id < b.section.id ? -1 : 1));
-  const result: GenerationResult = { schedules: [], reports, issues, visited: 0, completed: 0, truncated: false };
-  // The same bounded traversal and retained ranking are replayed for each ten-result page.
-  const discovery = offset === undefined ? undefined : {
+  const result: GenerationResult & { checkpoint?: DiscoveryCheckpoint } = { schedules: [], reports, issues, visited: 0, completed: 0, truncated: false };
+  const discovery: GenerationResult['discovery'] = !resumable && offset === undefined ? undefined : {
     upperBound: domains.length ? domains.reduce((total, d) => total * BigInt(d.candidates.length + Number(!d.required)), BigInt(1)).toString() : '0',
-    evaluated: 0, uniqueValid: 0, retained: 0, nextCursor: null as string | null,
+    evaluated: 0, uniqueValid: 0, retained: 0, nextCursor: null, resumable, exhausted: false,
   };
   if (discovery) result.discovery = discovery;
   if (issues.length) return result;
@@ -122,6 +124,109 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
       return !overlaps;
     });
   }
+  function scored(picks: Candidate[], optionalIncluded: number, changed: number, ordinals?: number[]): Found {
+    const sections = picks.map(c => c.section);
+    return { ...scoreSchedule(sections, request.weights, request.preferredInstructors),
+      id: sections.map(section => section.id).sort().join('|'), picked: [...picks], optionalIncluded, changed, ordinals };
+  }
+
+  function checkpointedDiscovery(stats: NonNullable<GenerationResult['discovery']>): void {
+    const previous = limits.checkpoint;
+    const state: DiscoveryCheckpoint = previous ? structuredClone(previous) : {
+      frontier: { path: [], next: 0 }, pending: [], windows: 0, visited: 0, evaluated: 0, uniqueValid: 0, retained: 0,
+    };
+    const choiceCount = (depth: number): number => domains[depth].candidates.length + Number(!domains[depth].required);
+    const restore = (ordinals: number[]): Candidate[] => ordinals.flatMap((ordinal, depth) => {
+      if (!Number.isInteger(ordinal) || ordinal < 0 || ordinal >= choiceCount(depth)) throw new InvalidDiscoveryCursor();
+      const candidate = domains[depth].candidates[ordinal];
+      return candidate ? [candidate] : [];
+    });
+    const frontier = state.frontier;
+    if (frontier) {
+      if (frontier.path.length >= domains.length || frontier.next < 0 || frontier.next >= choiceCount(frontier.path.length)) throw new InvalidDiscoveryCursor();
+      picked.push(...restore(frontier.path));
+    }
+    const buffered = state.pending.map(row => {
+      if (row.length !== domains.length) throw new InvalidDiscoveryCursor();
+      const candidates = restore(row);
+      if (!candidates.length) throw new InvalidDiscoveryCursor();
+      return candidates;
+    });
+    const cache = new Map<string, Selection>();
+    if (frontier && !buffered.length && state.windows < discoveryWindowLimit) {
+      const retainCount = state.windows === 0 ? initialShortlistSize : discoveryPageSize;
+      if (state.windows === 0) spend(); // Initial root entry, as in the original DFS.
+      const { path } = frontier;
+      let next = frontier.next;
+      while (true) {
+        const depth = path.length;
+        if (next === choiceCount(depth)) {
+          if (!depth) { state.frontier = null; break; }
+          const parent = path.pop()!;
+          if (domains[depth - 1].candidates[parent]) picked.pop();
+          next = parent + 1;
+          continue;
+        }
+        const candidate = domains[depth].candidates[next];
+        const leaf = depth === domains.length - 1;
+        if (candidate && !spend()) break; // Candidate attempt, including rejected choices.
+        const matches = !candidate || compatible(candidate);
+        if (candidate && matches) picked.push(candidate);
+        const feasible = matches && (!candidate || leaf || domains.slice(depth + 1)
+          .every(domain => !domain.required || domain.candidates.some(compatible)));
+        if (result.truncated || (feasible && !spend())) {
+          if (candidate && matches) picked.pop();
+          break; // Retry only this unfinished branch, with no counters charged twice except work.
+        }
+        if (leaf && (candidate || picked.length)) state.evaluated++;
+        if (feasible && !leaf) {
+          path.push(next);
+          next = 0;
+          continue;
+        }
+        if (feasible && picked.length) {
+          // Normalization guarantees globally unique section IDs. Each assignment is a unique set,
+          // including optional omissions, because each section belongs to exactly one domain.
+          state.uniqueValid++;
+          const ordinals = [...path, next];
+          const optionalIncluded = ordinals.filter((ordinal, i) => !domains[i].required && domains[i].candidates[ordinal]).length;
+          const found = scored(picked, optionalIncluded, 0, ordinals);
+          if (best.length < retainCount || compare(found, best[best.length - 1]) < 0) {
+            best.push(found);
+            best.sort(compare);
+            if (best.length > retainCount) best.pop();
+          }
+        }
+        if (candidate && matches) picked.pop();
+        next++;
+      }
+      if (state.frontier) state.frontier.next = next;
+      state.windows++;
+      state.visited += result.visited;
+      state.retained += best.length;
+      state.pending = best.map(item => item.ordinals!);
+      result.schedules = best.slice(0, discoveryPageSize).map(item => describe(item, domains, cache, request.eligibility?.profile ?? emptyProfile));
+    } else {
+      result.schedules = buffered.slice(0, discoveryPageSize).map(picks =>
+        describe(scored(picks, picks.filter(p => domains.some(d => d.course === p.course && !d.required)).length, 0),
+          domains, cache, request.eligibility?.profile ?? emptyProfile));
+    }
+    state.pending = state.pending.slice(discoveryPageSize);
+    const limited = state.frontier !== null && state.windows >= discoveryWindowLimit;
+    Object.assign(stats, { evaluated: state.evaluated, uniqueValid: state.uniqueValid, retained: state.retained,
+      windowSteps: result.visited, exhausted: state.frontier === null, sessionLimited: limited });
+    result.visited = state.visited;
+    result.completed = state.uniqueValid;
+    result.truncated = state.frontier !== null;
+    if (state.pending.length || (state.frontier && !limited)) result.checkpoint = state;
+    if (!state.uniqueValid && state.frontier === null) result.issues.push('No compatible schedule exists under these constraints. Review locks, hours, days off, or make a course optional.');
+  }
+
+  if (resumable && discovery) {
+    checkpointedDiscovery(discovery);
+    return result;
+  }
+
   function search(depth: number, optionalIncluded: number, changed: number): void {
     if (!spend() || changed > maxChanges) return;
     if (!discovery && !baseline.size && best.length === maxResults && optionalIncluded + domains.slice(depth).filter(d => !d.required).length < best[best.length - 1].optionalIncluded) return;
@@ -164,7 +269,10 @@ export function generateSchedules(courses: Course[], input: GenerationRequest, l
   const cache = new Map<string, Selection>();
   if (discovery && offset !== undefined) {
     discovery.retained = best.length;
-    const revision = createHash('sha256').update(JSON.stringify([request, discovery, best.map(({ id, score }) => [id, score])])).digest('hex');
+    discovery.exhausted = !result.truncated;
+    const { upperBound, evaluated, uniqueValid, retained, nextCursor } = discovery;
+    const replayStats = { upperBound, evaluated, uniqueValid, retained, nextCursor };
+    const revision = createHash('sha256').update(JSON.stringify([request, replayStats, best.map(({ id, score }) => [id, score])])).digest('hex');
     if (limits.discoveryRevision && limits.discoveryRevision !== revision) throw new StaleDiscoveryError('The schedule search changed. Generate schedules again.');
     if (offset + 10 < best.length) discovery.nextCursor = `${offset + 10}:${revision}`;
   }

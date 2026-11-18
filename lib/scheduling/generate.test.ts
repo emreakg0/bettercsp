@@ -99,6 +99,11 @@ test('cross-listed course codes block duplicate credit even without overlapping 
   const duplicate = generateSchedules([arabic, actual], request([arabic, actual]));
   assert.equal(duplicate.schedules.length, 0);
   assert.ok(duplicate.issues.some(issue => issue.includes('01:013:140') && issue.includes('01:074:140') && issue.includes('Choose one')));
+  const optional = request([a, b]);
+  optional.choices[1].required = false;
+  const resumed = generateSchedules([a, b], optional, { checkpoint: null });
+  assert.deepEqual(resumed.schedules.map(schedule => schedule.id), ['a']);
+  assert.equal(resumed.discovery!.exhausted, true);
 });
 test('transitive cross-listing and same-course campus variants are conservative duplicates', () => {
   const a = course('01:001:001', [section('a')]), b = course('01:002:002', [section('b', [meeting('T')])]), c = course('01:003:003', [section('c', [meeting('W')])]);
@@ -264,7 +269,7 @@ test('discovery distinguishes exhausted, empty, and budget-limited searches', ()
   const b = course('B', [section('b'), section('b2', [meeting('T')])]);
   const input = request([a, b]);
   const full = generateSchedules([a, b], input, { discoveryOffset: 0 });
-  assert.deepEqual(full.discovery, { upperBound: '4', evaluated: 4, uniqueValid: 2, retained: 2, nextCursor: null });
+  assert.deepEqual(full.discovery, { upperBound: '4', evaluated: 4, uniqueValid: 2, retained: 2, nextCursor: null, resumable: false, exhausted: true });
   assert.equal(full.truncated, false);
   const none = generateSchedules([a, b], { ...input, constraints: { ...input.constraints, daysOff: ['M'] } }, { discoveryOffset: 0 });
   assert.equal(none.discovery!.uniqueValid, 0);
@@ -300,4 +305,86 @@ test('avoiding late evenings is independent from preferring later starts and the
   assert.equal(generateSchedules([a], input).schedules.length, 2);
   input.constraints.lockedSectionIds = ['evening'];
   assert.equal(generateSchedules([a], input).schedules.length, 0);
+});
+
+test('resuming a small search visits every valid required and optional combination exactly once', () => {
+  const a = course('A', [section('a'), section('b', [meeting('T')]), section('late', [meeting('M', 1185, 1265)])]);
+  const b = course('B', [section('c', [meeting('W')]), section('d', [meeting('M')]), section('e', [meeting('T')])]);
+  const c = course('C', [section('f', [meeting('W')]), section('g', [meeting('H')])]);
+  const courses = [a, b, c];
+  const input = request(courses);
+  input.choices[2].required = false;
+  input.constraints.latestEnd = 1200;
+  const expected = generateSchedules(courses, input, { discoveryOffset: 0 });
+  const options = { maxNodes: 16 };
+  let page = generateSchedules(courses, input, { ...options, checkpoint: null });
+  const ids: string[] = [];
+  for (let batch = 0; batch < 12; batch++) {
+    ids.push(...page.schedules.map(s => s.id));
+    assert.ok(page.discovery!.windowSteps! <= options.maxNodes);
+    if (!page.checkpoint) break;
+    assert.equal(page.discovery!.exhausted, false);
+    const fromJson = JSON.parse(JSON.stringify(page.checkpoint));
+    page = generateSchedules(courses, input, { ...options, checkpoint: fromJson });
+    assert.deepEqual(page, generateSchedules(courses, input, { ...options, checkpoint: fromJson }));
+  }
+  assert.equal(page.discovery!.exhausted, true);
+  assert.equal(page.discovery!.uniqueValid, expected.discovery!.uniqueValid);
+  assert.equal(page.discovery!.evaluated, expected.discovery!.evaluated);
+  assert.deepEqual(ids.sort(), expected.schedules.map(s => s.id).sort());
+});
+
+test('real four-course discovery drains the original ranking before advancing its frontier', () => {
+  const courses = [dataStructures, calculus, catalog.find(c => c.code === '01:198:205')!, catalog.find(c => c.code === '01:355:101')!];
+  const input = request(courses);
+  input.weights.lateEvenings = 4;
+  const baseline = generateSchedules(courses, input, { discoveryOffset: 0 });
+  let page = generateSchedules(courses, input, { checkpoint: null });
+  assert.deepEqual(page.schedules, baseline.schedules);
+  assert.equal(page.discovery!.uniqueValid, baseline.discovery!.uniqueValid);
+  const ids = new Set(page.schedules.map(s => s.id));
+  for (let index = 1; index <= 6; index++) {
+    assert.ok(page.checkpoint);
+    page = generateSchedules(courses, input, { checkpoint: page.checkpoint });
+    assert.equal(page.schedules.length, 10);
+    for (const schedule of page.schedules) { assert.ok(!ids.has(schedule.id)); ids.add(schedule.id); }
+    if (index < 6) assert.equal(page.discovery!.windowSteps, 0);
+  }
+  assert.ok(page.discovery!.windowSteps! > 0);
+  assert.ok(page.discovery!.uniqueValid > baseline.discovery!.uniqueValid);
+  assert.ok(page.schedules.every(schedule => findConflicts(schedule.selections.map(s => s.section)).length === 0));
+});
+
+test('resumable discovery keeps protected indexes and stops at the session budget without claiming exhaustion', () => {
+  const courses = [dataStructures, calculus];
+  const input = request(courses);
+  input.constraints.lockedSectionIds = [calculus.sections[0].id];
+  let checkpoint: Parameters<typeof generateSchedules>[2] = { maxNodes: 8, checkpoint: null };
+  const seen = new Set<string>();
+  for (let window = 1; window <= 12; window++) {
+    const page = generateSchedules(courses, input, checkpoint);
+    assert.ok(page.discovery!.windowSteps! <= 8);
+    assert.equal(page.discovery!.exhausted, false);
+    assert.equal(page.discovery!.sessionLimited, window === 12);
+    for (const schedule of page.schedules) {
+      assert.ok(schedule.selections.some(s => s.section.id === calculus.sections[0].id));
+      assert.ok(!seen.has(schedule.id)); seen.add(schedule.id);
+    }
+    if (window === 12) assert.equal(page.checkpoint, undefined);
+    else assert.ok(page.checkpoint);
+    checkpoint = { ...checkpoint, checkpoint: page.checkpoint };
+  }
+  assert.ok(seen.size > 0);
+});
+
+test('an invalid frontier or shortlist ordinal cannot select an excluded or missing candidate', () => {
+  const input = request([calculus]);
+  const result = generateSchedules([calculus], input, { checkpoint: null, maxNodes: 22 });
+  assert.ok(result.checkpoint?.frontier);
+  assert.throws(() => generateSchedules([calculus], input, { checkpoint: {
+    ...result.checkpoint!, frontier: { path: [], next: 2001 },
+  } }), /invalid or expired/i);
+  assert.throws(() => generateSchedules([calculus], input, { checkpoint: {
+    ...result.checkpoint!, pending: [[2000]],
+  } }), /invalid or expired/i);
 });

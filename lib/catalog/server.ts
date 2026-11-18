@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { normalizeCatalog } from '../rutgers/normalize.ts';
@@ -16,7 +17,8 @@ async function loadCatalog() {
   const subjects = [...new Map(courses.map(c => [c.subject, c.department])).entries()]
     .map(([code, name]) => ({ code, name })).sort((a, b) => a.name.localeCompare(b.name));
   const sectionCount = courses.reduce((total, course) => total + course.sections.length, 0);
-  return { courses, subjects, sectionCount, byId: new Map(courses.map(c => [c.id, c])) };
+  const revision = createHash('sha256').update(content).digest('hex');
+  return { revision, courses, subjects, sectionCount, byId: new Map(courses.map(c => [c.id, c])) };
 }
 let catalog: ReturnType<typeof loadCatalog> | undefined;
 export function getCatalog(): ReturnType<typeof loadCatalog> {

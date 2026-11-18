@@ -136,7 +136,13 @@ test('eligibility filtering is opt-in, preserves unknown sections, and never sil
   assert.equal(filtered.schedules.length, 0); assert.ok(filtered.reports[0].eligibilityExclusions?.[0].findings.some(f => f.category === 'standing'));
   assert.equal(generateSchedules([c], request(c.id, profile(), true)).schedules.length, 1);
   const locked = request(c.id, student, true); locked.constraints.lockedSectionIds = [c.sections[0].id];
-  assert.equal(generateSchedules([c], locked).schedules.length, 0); assert.ok(generateSchedules([c], locked).issues.some(i => i.includes('lock')));
+  const lockedResult = generateSchedules([c], locked);
+  assert.equal(lockedResult.schedules.length, 0);
+  assert.ok(lockedResult.issues.some(i => i.includes('lock')));
+  const discovery = generateSchedules([c], locked, { checkpoint: null });
+  assert.equal(discovery.schedules.length, 0);
+  assert.equal(discovery.checkpoint, undefined);
+  assert.deepEqual(discovery.reports, lockedResult.reports);
 });
 test('eligibility and snapshot status do not alter deterministic preference scoring', () => {
   const base = generateSchedules([calculus], request(calculus.id));

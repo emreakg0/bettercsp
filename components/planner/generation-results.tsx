@@ -18,23 +18,31 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
 }) {
   const [index, setIndex] = useState(0), [compared, setCompared] = useState<number | null>(null);
   const schedule = result.schedules[index];
+  const progress = result.discovery;
   return <section className="generation-results" aria-label="Generated schedules">
-    {result.truncated && <p role="status" className="snapshot-note">Search limit reached. Ranking covers the options found so far. A better schedule may exist.</p>}
+    {result.truncated && <p role="status" className="snapshot-note">{progress?.sessionLimited
+      ? 'This search reached its session limit. Unexplored combinations remain.'
+      : progress?.resumable ? 'Search paused at the work limit. Later batches may contain better schedules.'
+        : 'Search limit reached. Ranking covers the options found so far. A better schedule may exist.'}</p>}
     {stale && <p role="status" className="snapshot-note">Your choices, preferences, academic information, locks, or manual schedule changed. Generate again before applying.</p>}
     {!!result.issues.length && <ul className="generation-notes">{result.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
-    {!schedule && <p className="muted">No schedule was found in this search. Review the reasons above, then adjust a hard constraint, unlock a section if appropriate, or change your course choices and generate again.</p>}
-    {schedule && <>
-      <nav className="generation-navigation" aria-label="Generated schedule navigation">
+    {!schedule && <p className="muted">{progress?.nextCursor
+      ? 'No schedules found yet. Continue searching the remaining combinations.'
+      : 'No schedule was found. Review the reasons above, then adjust a constraint or change your course choices and generate again.'}</p>}
+    {schedule && <nav className="generation-navigation" aria-label="Generated schedule navigation">
         <button className="button schedule-nav-button" disabled={index === 0} onClick={() => setIndex(index - 1)}>← Previous schedule</button>
         <strong aria-live="polite">Schedule {index + 1} of {result.schedules.length}</strong>
         <button className="button schedule-nav-button" disabled={index === result.schedules.length - 1} onClick={() => setIndex(index + 1)}>Next schedule →</button>
-      </nav>
+      </nav>}
       {loadingMore && <span role="status" className="sr-only">Loading more schedules.</span>}
-      {result.discovery?.nextCursor
+      {progress?.nextCursor
         ? <button className="text-button" disabled={stale || !canExplore} onClick={onExplore}>{loadingMore ? 'Loading more schedules…' : 'Explore more schedules'}</button>
-        : <p className="muted">{result.discovery && result.discovery.uniqueValid > result.discovery.retained
-          ? 'Browsing limit reached. Adjust your preferences to see a different set.'
-          : result.truncated ? 'You’ve loaded every option found within the search limit.' : 'All schedules found are loaded.'}</p>}
+        : schedule && <p className="muted">{result.truncated
+          ? 'All shortlisted schedules are loaded. Unexplored combinations remain.'
+          : progress?.uniqueValid !== progress?.retained
+            ? 'Search exhausted. All shortlisted schedules are loaded.'
+            : 'All schedules found are loaded.'}</p>}
+    {schedule && <>
       <WeeklyCalendar selections={schedule.selections} idPrefix="generated" />
       <Metrics schedule={schedule} />
       {schedule.selections.map(selection => <article id={`generated-${selection.section.index}`} key={selection.section.id}>
@@ -60,14 +68,14 @@ export function GenerationResults({ result, stale, onApply, canApply, profile, l
       <details className="generation-limitations"><summary>Registration review & limitations</summary><ul className="generation-notes">{schedule.limitations.map(text => <li key={text}>{text}</li>)}</ul></details>
       <details><summary>Course prerequisites and source registration notes</summary><dl>{schedule.restrictions.map((notice, i) => <div key={i}><dt>{notice.courseCode} · index {notice.sectionIndex} · {notice.field}</dt><dd>{notice.text}</dd></div>)}</dl></details>
       <details><summary>How schedules were ranked & search details</summary>
-      <p>Preference score: {schedule.score}. Includes {schedule.optionalIncluded} optional courses. Optional-course coverage ranks first, then weighted preferences; ties use registration IDs.</p>
+      <p>Preference score: {schedule.score}. Includes {schedule.optionalIncluded} optional courses. Within each search window, optional-course coverage ranks first, then weighted preferences. Ties use registration IDs. Later windows do not reorder earlier results.</p>
       <details><summary>Why this score?</summary><ul className="generation-notes">{schedule.breakdown.map(part => <li key={part.label}>{part.label}: {part.amount} penalty points</li>)}</ul>
         <p className="muted">Days and hours are weighted using the controls above. Daily start times are averaged across class days. Eligibility, honors status, and snapshot seats never change this score.</p></details>
       </details>
     </>}
     <details><summary>Search counts, candidate sections and exclusions</summary>
       {result.discovery && <p className="muted">{BigInt(result.discovery.upperBound).toLocaleString('en-US')} possible combinations before conflict and cross-list checks (upper bound) · {result.discovery.evaluated.toLocaleString()} complete combinations checked · {result.discovery.uniqueValid.toLocaleString()} unique valid timetables found · {result.schedules.length} loaded of {result.discovery.retained} retained.</p>}
-      <p className="muted">{result.visited.toLocaleString()} search steps. {result.truncated ? 'Stopped at the search limit.' : result.visited ? 'Search exhausted.' : 'Stopped before searching.'}</p>
+      <p className="muted">{result.visited.toLocaleString()} search steps{progress?.windowSteps !== undefined && ` (${progress.windowSteps.toLocaleString()} on last request)`}. {progress?.exhausted ? 'Search exhausted.' : result.truncated ? 'Stopped at the work limit with combinations unexplored.' : 'Stopped before searching.'}</p>
 {result.reports.map(report => <p className="muted" key={report.courseId}>
       {report.code}: {report.candidates} of {report.total} sections available to the solver.
       {Object.entries(report.exclusions).map(([reason, count]) => ` ${reason}: ${count}.`).join('')}

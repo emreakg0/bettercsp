@@ -44,5 +44,6 @@ export interface GenerationResult {
   discovery?: {
     upperBound: string; evaluated: number; uniqueValid: number; retained: number;
     nextCursor: string | null;
+    resumable?: boolean; exhausted?: boolean; sessionLimited?: boolean; windowSteps?: number;
   };
 }
